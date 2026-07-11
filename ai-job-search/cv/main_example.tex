@@ -1,0 +1,198 @@
+%% CV mestre - Guilherme Augusto S. F. C. Oliveira
+%% Visão completa de competências, experiência e certificações.
+%% Usar como referência ao gerar CVs direcionados (main_<empresa>.tex).
+%%
+%% Populado pelo /setup em 2026-07-11 a partir de documents/cv/.
+%% Compilar com: lualatex main_example.tex
+%% (pdflatex costuma falhar no MiKTeX moderno com erros de fonte do fontawesome5.)
+
+\documentclass[11pt,a4paper,sans]{moderncv}
+\moderncvstyle{banking}
+\moderncvcolor{blue}
+
+% Force both first and last name AND section headings to render in moderncv
+% blue (color1). Default banking on lualatex+MiKTeX leaves these black, which
+% looks inconsistent with the rest of the blue accent scheme.
+\renewcommand*{\firstnamestyle}[1]{{\fontsize{34}{36}\bfseries\upshape\color{color1}#1}}
+\renewcommand*{\lastnamestyle}[1]{{\fontsize{34}{36}\bfseries\upshape\color{color1}#1}}
+\renewcommand*{\sectionstyle}[1]{{\sectionfont\color{color1}#1}}
+
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=blue,
+    pdftitle={Guilherme Augusto S. F. C. Oliveira - CV},
+    pdfpagemode=FullScreen,
+}
+\usepackage[scale=0.80]{geometry}
+\usepackage{import}
+\usepackage{needspace}
+
+% personal data
+\name{Guilherme}{Augusto S. F. C. Oliveira}
+\address{Brasília, DF, Brasil}{}{}
+\phone[mobile]{+55 61 98295-9085}
+\email{Guilhermeacof@gmail.com}
+% Os "%" da URL precisam de escape (\%) — sem isso o LaTeX trata o resto da
+% linha como comentário e o link some do cabeçalho.
+\extrainfo{\href{https://www.linkedin.com/in/guilherme-can\%C3\%A7ado-840b1190}{LinkedIn}}
+
+\begin{document}
+
+\makecvtitle
+
+% ============================================================
+%     PROFILE STATEMENT
+% ============================================================
+
+\vspace{6pt}
+\small{Analista de Qualidade Sênior / Arquiteto de Testes com 13 anos em tecnologia e trajetória completa em qualidade de software — do teste manual à arquitetura de automação. Experiência consolidada em clientes de grande porte (Polícia Federal, TSE, DATASUS, CAIXA, SICOOB) implantando processos de qualidade, automatizando testes Web, API e mobile e formando equipes de QA. Certificado CTFL, CPRE-FL, CSM e Prince2, com forte atuação em times ágeis de alta performance.}
+
+% ============================================================
+%     CORE COMPETENCIES
+% ============================================================
+
+\section{Competências Principais}
+\vspace{1pt}
+\begin{itemize}
+
+\item \textbf{Automação Web/API}: Playwright + JavaScript, Cypress + Cucumber (BDD), Selenium + C\#/Java — incluindo sistemas legados (PowerBuilder).
+
+\item \textbf{Automação Mobile}: Robot Framework + Appium + Python, em Android e iOS (apps CaixaTem e MeuFGTS).
+
+\item \textbf{Performance e CI/CD}: testes de carga/stress/integração com JMeter; integração de suítes automatizadas a pipelines GitHub/GitLab.
+
+\item \textbf{Processo de Qualidade}: implantação de processos de qualidade de software do zero, gestão de não conformidades, fiscalização de fábricas de qualidade e indicadores gerenciais.
+
+\item \textbf{Liderança e Agilidade}: formação e treinamento de equipes de QA; Scrum Master de múltiplos times (CSM, CSPO, Management 3.0); análise de requisitos (CPRE-FL).
+
+\item \textbf{IA aplicada a Testes}: uso profissional de IA agêntica (Claude Code com servidores MCP) para geração e manutenção de scripts de automação e otimização do processo de QA.
+
+\end{itemize}
+
+% ============================================================
+%     PROFESSIONAL EXPERIENCE
+% ============================================================
+
+\section{Experiência Profissional}
+\vspace{3pt}
+\begin{itemize}
+
+% --- Stefanini ---
+\item{\cventry{2021--2026}{Arquiteto de Testes Sênior}{Stefanini}{Brasília, DF}{}{\vspace{1pt}
+\begin{itemize}
+    \item Implantação do processo de qualidade de software nos clientes Polícia Federal, SERPRO, Conselho Federal de Medicina e ENERGISA
+    \item Automação E2E Web/API com Playwright + JavaScript, Cypress e Selenium (C\# e Java), incluindo sistemas legados PowerBuilder
+    \item Automação mobile com Robot Framework + Appium + Python; testes de carga/stress/performance com JMeter
+    \item Integração e implementação de pipelines de CI/CD; gerenciamento de não conformidades por projeto
+    \item Treinamento de colaboradores juniores em automação e testes manuais
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- TSE ---
+\needspace{5\baselineskip}
+\item{\cventry{2023--2024}{Consultor Analista de Requisitos Especialista}{Tribunal Superior Eleitoral}{Brasília, DF}{}{\vspace{1pt}
+\begin{itemize}
+    \item Levantamento e modelagem de requisitos do sistema eleitoral; definição das necessidades de negócio
+    \item Gerenciamento de backlog, monitoramento do desenvolvimento e análise de riscos do projeto
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- CastGroup ---
+\needspace{5\baselineskip}
+\item{\cventry{2020--2021}{Analista de Teste Sênior}{CastGroup}{Cliente SEBRAE}{}{\vspace{1pt}
+\begin{itemize}
+    \item Cenários, suítes e casos de teste com BDD; automação Web com Cypress + JavaScript + Cucumber e mobile com Robot Framework
+    \item Testes de carga/stress/performance; treinamento de novos QAs e apresentação de cerimônias Scrum
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- Fóton ---
+\needspace{5\baselineskip}
+\item{\cventry{2020}{Engenheiro de Teste}{Fóton Informática}{Cliente CAIXA — apps CaixaTem e MeuFGTS}{}{\vspace{1pt}
+\begin{itemize}
+    \item Testes manuais e automatizados (Robot Framework) dos apps mobile da CAIXA em Android e iOS
+    \item Montagem de ambientes de teste e definição da abordagem de teste
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- RSI ---
+\needspace{5\baselineskip}
+\item{\cventry{2019--2020}{Analista de Teste III}{RSI Informática}{Cliente DATASUS / Ministério da Saúde}{}{\vspace{1pt}
+\begin{itemize}
+    \item Gerenciamento da equipe de qualidade do Ministério da Saúde; fiscalização da fábrica de qualidade e indicadores mensais
+    \item Instalação e integração LDAP/DB dos ambientes TestLink e Mantis; disseminação da cultura ágil
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- CAST ---
+\needspace{5\baselineskip}
+\item{\cventry{2017--2019}{Analista de Requisitos / Scrum Master}{CAST Informática}{Clientes ANAC, DATASUS, ANATEL, FUNPRESP, CAIXA, SEBRAE}{}{\vspace{1pt}
+\begin{itemize}
+    \item Administração de múltiplos times Scrum em órgãos governamentais; gerenciamento e priorização de portfólio de projetos críticos
+    \item Prototipação de telas, modelagem de dados e contagem de pontos de função
+\end{itemize}}}
+
+\vspace{3pt}
+
+% --- CTIS (condensado) ---
+\needspace{4\baselineskip}
+\item{\cventry{2013--2017}{Analista de Requisitos I · Analista de Testes I · Técnico de Suporte II}{CTIS Tecnologia S.A}{Cliente DATASUS}{}{\vspace{1pt}
+Progressão de suporte a analista: automação com Selenium WebDriver e TestLink, especificações técnicas e casos de uso, liderança do time de testes e treinamento de novos colaboradores.}}
+
+\end{itemize}
+
+% ============================================================
+%     EDUCATION
+% ============================================================
+
+\section{Formação}
+\vspace{1pt}
+\begin{itemize}
+
+\item{\cventry{2022}{MBA em Cybersecurity e Cybercrimes}{Anhanguera}{}{}{}}
+\item{\cventry{2022}{Pós-graduação em BI, Big Data e Analytics — Ciência de Dados}{Anhanguera}{}{}{}}
+\item{\cventry{2017}{Superior de Tecnologia em Análise e Desenvolvimento de Sistemas}{UniCEUB}{Brasília, DF}{}{}}
+
+\end{itemize}
+
+% ============================================================
+%     CERTIFICATIONS
+% ============================================================
+
+\section{Certificações}
+\vspace{1pt}
+\begin{itemize}
+\item \textbf{Testes e requisitos}: CTFL (ISTQB), AICS ASTFC, CPRE-FL.
+\item \textbf{Agilidade e gestão}: CSM, CSPO, CSD, A-CSD, ACPC, SFPC, Prince2, DEPC, Management 3.0, Mini-MBA (IBMI).
+\end{itemize}
+
+% ============================================================
+%     LANGUAGES
+% ============================================================
+
+\section{Idiomas}
+\vspace{1pt}
+\begin{itemize}
+\item Português (nativo), Inglês (intermediário), Espanhol (básico).
+\end{itemize}
+
+% ============================================================
+%     REFERENCES
+% ============================================================
+
+\section{Referências}
+\vspace{1pt}
+\begin{itemize}
+\item{Disponíveis sob solicitação.}
+\end{itemize}
+
+\end{document}
