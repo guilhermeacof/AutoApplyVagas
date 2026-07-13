@@ -125,6 +125,27 @@ e reaproveitado como está. Ao **preparar candidatura**, o painel instrui o assi
 
 ## Changelog
 
+### 2026-07-13 — novo visual do currículo (Estilo "Clássico refinado", verde-petróleo)
+- A pedido do usuário (o moderncv/banking estava "feio"), o `cv/main_example.tex` foi
+  **redesenhado**: template próprio em `article` — uma coluna, tipografia Lato, cor de
+  destaque **verde-petróleo** (#0F6E56), títulos de seção com filete, cabeçalho com nome
+  grande + contato com ícones. Continua com **2 páginas**.
+- **Cuidado com ATS:** a Lato como Type1 fazia a extração de texto perder as ligaduras
+  "fi/fl" ("Profissional"→"Prossional", "Certificado"→"Certicado") e os traços das datas —
+  o que quebraria a leitura por robôs de triagem. Corrigido carregando a Lato em **OpenType
+  via fontspec** com `Ligatures={TeX,NoCommon}`. Verificado com `pdftotext`: todas as
+  palavras-chave com "fi" extraem inteiras, datas com traço, email/telefone literais, sem
+  `�`/`(cid:)`.
+- O usuário escolheu estilo e cor a partir de uma comparação visual (3 estilos com os dados
+  reais). Estilos B (cabeçalho colorido) e C (barra lateral, com ressalva de ATS) ficaram
+  como alternativas caso queira trocar depois.
+- **Extração 100% limpa:** os ícones de contato (fontawesome) vazavam o próprio nome na
+  camada de texto (`Map-marker-alt`, `Envelope`, `LINKEDIN`). Envolvidos com `accsupp`
+  (`\ic{}` → `ActualText` vazio), então o ATS lê só o dado real (e-mail/telefone/cidade).
+  Auditoria pós-ajuste: PDF de texto real, fontes embutidas com Unicode, cabeçalhos de seção
+  reconhecíveis, uma coluna, sem ruído de ícone. **Ressalva honesta:** isso garante a
+  LEITURA pelo ATS; a APROVAÇÃO depende do match de palavras-chave por vaga (fluxo do painel).
+
 ### 2026-07-13 — currículo ÚNICO (deixa de ser um CV por vaga)
 - **Decisão do usuário:** manter **um currículo só** que vai crescendo, em vez de gerar um
   CV direcionado a cada vaga. Economiza tempo. Carta de apresentação continua **curta e por vaga**.
