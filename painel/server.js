@@ -363,6 +363,26 @@ function cvPdfDesatualizado() {
   try { return fs.existsSync(tex) && fs.statSync(tex).mtimeMs > fs.statSync(pdf).mtimeMs; } catch { return true; }
 }
 
+// Nome do candidato extraído do PRÓPRIO currículo (nada hardcoded): assim o arquivo
+// baixado sai com o nome de quem usa o sistema, não do autor. Fallback: sem nome.
+function limparNomeTex(s) {
+  return String(s || "").replace(/\\[a-zA-Z]+\*?/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+function nomeCandidato() {
+  try {
+    const tex = fs.readFileSync(path.join(CV_DIR, CV_TEX), "utf8");
+    let m = tex.match(/pdfauthor\s*=\s*\{([^}]+)\}/i);          // nosso template (fontspec)
+    if (m && limparNomeTex(m[1])) return limparNomeTex(m[1]);
+    m = tex.match(/pdftitle\s*=\s*\{([^}]+?)(?:\s*-\s*CV)?\}/i);  // pdftitle "Nome - CV"
+    if (m && limparNomeTex(m[1])) return limparNomeTex(m[1]);
+    m = tex.match(/\\name\{([^}]*)\}\{([^}]*)\}/);                // moderncv \name{}{}
+    if (m) { const n = limparNomeTex(m[1] + " " + m[2]); if (n) return n; }
+    m = tex.match(/\\bfseries\\color\{accent\}([^\\{}%]+?)\\par/); // cabeçalho do nosso template
+    if (m && limparNomeTex(m[1])) return limparNomeTex(m[1]);
+  } catch {}
+  return null;
+}
+
 // ---------- Busca com progresso real (roda as CLIs direto, cancelável) ----------
 
 function heurFit(title) {
@@ -744,7 +764,8 @@ const server = http.createServer((req, res) => {
   if ((u.pathname === "/api/mycv/pdf" || u.pathname === "/api/mycv/download") && req.method === "GET") {
     const fmt = u.searchParams.get("fmt") || "pdf";
     const baixar = u.pathname === "/api/mycv/download";
-    const nomeBase = "Currículo - Guilherme Augusto S. F. C. Oliveira";
+    const nome = nomeCandidato();
+    const nomeBase = nome ? "Currículo - " + nome : "Currículo";
     // Cabeçalho HTTP precisa ser ASCII: fallback sem acento + filename* (UTF-8, RFC 5987).
     const disp = (ext) => {
       const ascii = nomeBase.normalize("NFD").replace(/[̀-ͯ]/g, "") + "." + ext;
