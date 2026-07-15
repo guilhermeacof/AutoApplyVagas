@@ -1,24 +1,15 @@
 /* Interface da extensão. Prefixo pcx- e z-index alto para não brigar com o CSS do
-   portal (LinkedIn e Gupy usam modais com z-index bem alto). */
-
-.pcx-btn {
-  position: fixed; right: 18px; bottom: 18px; z-index: 2147483646;
-  background: #1e7d46; color: #fff; border: 0; border-radius: 99px;
-  padding: 12px 18px; font: 600 14px/1.2 system-ui, -apple-system, Segoe UI, sans-serif;
-  cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
-}
-.pcx-btn:hover { background: #19693a; }
-.pcx-btn:disabled { opacity: .6; cursor: default; }
+   portal (LinkedIn, Gupy e os ATS usam modais com z-index bem alto). */
 
 .pcx-relat {
-  position: fixed; right: 18px; bottom: 72px; z-index: 2147483647;
-  width: 380px; max-height: 62vh; overflow: auto;
+  position: fixed; right: 18px; bottom: 18px; z-index: 2147483647;
+  width: 380px; max-height: 70vh; overflow: auto;
   background: #fff; color: #17211d; border: 1px solid #d8e0dc; border-radius: 14px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
   font: 400 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; padding: 14px 16px;
 }
-.pcx-topo { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 14px; }
-.pcx-x { border: 0; background: none; font-size: 15px; cursor: pointer; color: #5c6b64; }
+.pcx-topo { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+.pcx-x { border: 0; background: none; font-size: 15px; cursor: pointer; color: #5c6b64; flex-shrink: 0; }
 .pcx-fonte { margin: 6px 0 10px; color: #5c6b64; font-size: 12px; }
 .pcx-lista { list-style: none; margin: 0; padding: 0; }
 .pcx-lista li { padding: 7px 0; border-top: 1px solid #eef2f0; }
@@ -28,6 +19,15 @@
 .pcx-faltou { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid #eef2f0; color: #5c6b64; font-size: 12px; }
 .pcx-aviso { margin: 10px 0 0; padding: 8px 10px; background: rgba(200, 140, 0, .12); color: #8a6d00; border-radius: 8px; font-size: 12px; }
 
+/* Escolher a vaga na mão (quando o formulário está noutro domínio) */
+.pcx-troca { margin: 10px 0 0; }
+.pcx-outra, .pcx-pick {
+  background: none; border: 0; color: #1e7d46; font: inherit; font-weight: 700;
+  cursor: pointer; padding: 0; text-align: left; width: 100%;
+}
+.pcx-outra:hover, .pcx-pick:hover { text-decoration: underline; }
+.pcx-pick span { font-weight: 400; }
+
 @media (prefers-color-scheme: dark) {
   .pcx-relat { background: #16201c; color: #e6efeb; border-color: #2a3a34; }
   .pcx-lista li { border-top-color: #23302b; }
@@ -36,4 +36,5 @@
   .pcx-fonte, .pcx-faltou { color: #93a49d; }
   .pcx-faltou { border-top-color: #23302b; }
   .pcx-duvida, .pcx-aviso { color: #e8c26a; }
+  .pcx-outra, .pcx-pick { color: #4fb477; }
 }

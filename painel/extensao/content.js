@@ -10,8 +10,7 @@
 // pessoa enviaria sem saber que um campo foi preenchido com a resposta errada.
 
 (() => {
-  if (window.__painelCandidaturas) return;   // evita injetar duas vezes na mesma aba
-  window.__painelCandidaturas = true;
+  if (window.__painelPreencher) return;   // já injetado nesta aba: o gatilho é reusado
 
   // ---------- texto ----------
   const PALAVRAS_VAZIAS = new Set(["de","da","do","das","dos","e","a","o","as","os","um","uma","em","no","na",
@@ -93,9 +92,9 @@
   }
 
   // ---------- escrever no campo ----------
-  // React/Ember (LinkedIn e Gupy) ignoram el.value = x: eles guardam o valor num
-  // estado interno e sobrescrevem na hora. É preciso chamar o setter nativo e disparar
-  // os eventos na mão para o framework perceber a mudança.
+  // React/Ember (LinkedIn, Gupy, SmartRecruiters…) ignoram el.value = x: eles guardam o
+  // valor num estado interno e sobrescrevem na hora. É preciso chamar o setter nativo e
+  // disparar os eventos na mão para o framework perceber a mudança.
   function escrever(el, valor) {
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
@@ -136,11 +135,11 @@
   // ---------- preencher ----------
   const LIMITE = 0.45;   // abaixo disso o casamento é chute; melhor deixar em branco
 
-  function preencher(campos, respostas) {
+  function preencher(respostas) {
     const usados = new Set();
-    const feitos = [], semResposta = [], jaTinha = [];
-    for (const campo of campos) {
-      if (preenchido(campo)) { jaTinha.push(campo.rotulo); continue; }   // não sobrescreve o que o portal já trouxe
+    const feitos = [], semResposta = [];
+    for (const campo of camposDaTela()) {
+      if (preenchido(campo)) continue;   // não sobrescreve o que o portal já trouxe
       const cand = respostas
         .map((r, i) => ({ i, r, s: semelhanca(campo.rotulo, r.pergunta) }))
         .filter((x) => x.r.resposta && !usados.has(x.i) && x.s >= LIMITE)
@@ -151,61 +150,100 @@
       usados.add(cand.i);
       feitos.push({ campo: campo.rotulo, pergunta: cand.r.pergunta, valor: escrito, conf: cand.s });
     }
-    return { feitos, semResposta, jaTinha };
+    return { feitos, semResposta };
   }
+
+  // ---------- conversa com o painel ----------
+  const pedir = (msg) => new Promise((r) => chrome.runtime.sendMessage(msg, r));
 
   // ---------- interface ----------
-  const corta = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+  const corta = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + "…" : String(s));
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  function relatorio(res, info) {
+  function caixa() {
+    document.querySelectorAll(".pcx-relat").forEach((n) => n.remove());
     const cx = document.createElement("div");
     cx.className = "pcx-relat";
-    const linhas = res.feitos.map((f) =>
-      '<li><b>' + corta(f.campo, 60) + '</b><span>' + corta(String(f.valor), 90) + '</span>' +
-      (f.conf < 0.7 ? '<i class="pcx-duvida">confira: casei com “' + corta(f.pergunta, 45) + '”</i>' : '') + '</li>').join("");
-    const faltou = res.semResposta.length
-      ? '<p class="pcx-faltou"><b>Sem resposta salva (' + res.semResposta.length + '):</b> ' +
-        corta(res.semResposta.join(" · "), 220) + '</p>' : "";
-    cx.innerHTML =
-      '<div class="pcx-topo"><span>' + (res.feitos.length ? "✅ " + res.feitos.length + " campo(s) preenchido(s)" : "Nada para preencher aqui") +
-      '</span><button class="pcx-x" title="Fechar">✕</button></div>' +
-      '<p class="pcx-fonte">' + info + '</p>' +
-      (linhas ? '<ul class="pcx-lista">' + linhas + '</ul>' : "") + faltou +
-      '<p class="pcx-aviso">⚠ Confira tudo antes de enviar. <b>Eu não envio nada</b> — o clique em “Enviar” é seu.</p>';
-    cx.querySelector(".pcx-x").addEventListener("click", () => cx.remove());
-    document.querySelectorAll(".pcx-relat").forEach((n) => n.remove());
     document.body.appendChild(cx);
+    return cx;
   }
 
-  function aviso(texto) {
-    relatorio({ feitos: [], semResposta: [], jaTinha: [] }, texto);
+  function pintar(cx, topo, corpo) {
+    cx.innerHTML = '<div class="pcx-topo"><span>' + topo + '</span><button class="pcx-x" title="Fechar">✕</button></div>' + corpo;
+    cx.querySelector(".pcx-x").addEventListener("click", () => cx.remove());
   }
 
-  const botao = document.createElement("button");
-  botao.className = "pcx-btn";
-  botao.textContent = "📋 Preencher com o Painel";
-  botao.addEventListener("click", () => {
-    botao.disabled = true; botao.textContent = "Buscando respostas…";
-    chrome.runtime.sendMessage({ tipo: "respostas", url: location.href }, (resp) => {
-      botao.disabled = false; botao.textContent = "📋 Preencher com o Painel";
-      if (!resp || !resp.ok) return aviso("❌ " + ((resp && resp.erro) || "não consegui falar com o Painel."));
-      const d = resp.d || {};
-      const respostas = (d.campos || []).filter((c) => c.resposta);
-      if (!respostas.length) return aviso("Não há respostas salvas para preencher. Abra a vaga no Painel e prepare as respostas primeiro.");
-      const campos = camposDaTela();
-      const res = preencher(campos, respostas);
-      const fonte = d.achou
-        ? "Respostas desta vaga: " + (d.vaga.company || "") + (d.vaga.title ? " — " + d.vaga.title : "") +
-          (d.casou === "id" ? " (casei pelo id da vaga)" : "")
-        : "⚠ Não achei esta vaga no Painel — usei só os seus dados padrão (cidade, pretensão, LinkedIn…). " +
-          "As perguntas específicas desta vaga ficaram em branco.";
-      relatorio(res, fonte);
-    });
-  });
+  function relatorio(cx, res, fonte, comTroca) {
+    const linhas = res.feitos.map((f) =>
+      '<li><b>' + esc(corta(f.campo, 60)) + '</b><span>' + esc(corta(f.valor, 90)) + '</span>' +
+      (f.conf < 0.7 ? '<i class="pcx-duvida">confira: casei com “' + esc(corta(f.pergunta, 45)) + '”</i>' : '') + '</li>').join("");
+    // "Ficaram em branco", não "sem resposta salva": às vezes existe resposta, mas ela
+    // não se aplica ao campo — típico de Sim/Não, onde só marco a opção se a resposta
+    // começar com sim ou não. Chutar "Sim" a partir de um texto descritivo faria a
+    // pessoa afirmar no formulário algo que a resposta dela talvez negue.
+    const faltou = res.semResposta.length
+      ? '<p class="pcx-faltou"><b>Ficaram em branco (' + res.semResposta.length + ') — responda você:</b> ' +
+        esc(corta(res.semResposta.join(" · "), 220)) + '</p>' : "";
+    pintar(cx, res.feitos.length ? "✅ " + res.feitos.length + " campo(s) preenchido(s)" : "Nada para preencher aqui",
+      '<p class="pcx-fonte">' + fonte + '</p>' +
+      (linhas ? '<ul class="pcx-lista">' + linhas + '</ul>' : "") + faltou +
+      (comTroca ? '<p class="pcx-troca"><button class="pcx-outra">Não é esta vaga? Escolher outra</button></p>' : "") +
+      '<p class="pcx-aviso">⚠ Confira tudo antes de enviar. <b>Eu não envio nada</b> — o clique em “Enviar” é seu.</p>');
+    const outra = cx.querySelector(".pcx-outra");
+    if (outra) outra.addEventListener("click", () => escolher(cx));
+  }
 
-  const por = () => { if (!document.body.contains(botao)) document.body.appendChild(botao); };
-  por();
-  // O formulário do LinkedIn é um modal de várias páginas: o botão precisa sobreviver
-  // à troca de página, e a pessoa clica de novo a cada etapa.
-  new MutationObserver(por).observe(document.documentElement, { childList: true, subtree: true });
+  // Seletor manual. É o que salva o caso comum: o anúncio está num domínio (o radar
+  // guarda a vaga do Serasa no LinkedIn) e o formulário noutro (SmartRecruiters, com
+  // outro id). Sem isto, a extensão simplesmente desistiria nessas vagas.
+  async function escolher(cx) {
+    pintar(cx, "Qual é esta vaga?", '<p class="pcx-fonte">Carregando as suas vagas preparadas…</p>');
+    const resp = await pedir({ tipo: "lista" });
+    if (!resp || !resp.ok) return pintar(cx, "❌ Erro", '<p class="pcx-fonte">' + esc((resp && resp.erro) || "falhou") + "</p>");
+    const vagas = (resp.d && resp.d.vagas) || [];
+    if (!vagas.length) {
+      return pintar(cx, "Nenhuma vaga preparada", '<p class="pcx-fonte">Você ainda não preparou respostas para nenhuma vaga. ' +
+        'No Painel, marque a vaga e clique em <b>Preparar candidaturas</b>.</p>');
+    }
+    pintar(cx, "Qual é esta vaga?", '<p class="pcx-fonte">Não reconheci a página. Escolha a vaga e eu preencho com as respostas dela.</p>' +
+      '<ul class="pcx-lista">' + vagas.map((v, i) =>
+        '<li><button class="pcx-pick" data-i="' + i + '"><b>' + esc(corta(v.company || "(sem empresa)", 48)) + '</b>' +
+        '<span>' + esc(corta(v.title || "", 60)) + ' · ' + v.campos + ' resposta(s)</span></button></li>').join("") + '</ul>');
+    cx.querySelectorAll(".pcx-pick").forEach((b) => b.addEventListener("click", async () => {
+      const v = vagas[+b.dataset.i];
+      pintar(cx, "Preenchendo…", '<p class="pcx-fonte">' + esc(v.company) + "</p>");
+      const r = await pedir({ tipo: "vaga", url: v.url });
+      if (!r || !r.ok) return pintar(cx, "❌ Erro", '<p class="pcx-fonte">' + esc((r && r.erro) || "falhou") + "</p>");
+      const campos = ((r.d && r.d.campos) || []).filter((c) => c.resposta);
+      relatorio(cx, preencher(campos), "Respostas de: <b>" + esc(v.company) + "</b>" + (v.title ? " — " + esc(v.title) : "") +
+        " (escolhida por você)", true);
+    }));
+  }
+
+  async function preencherAgora() {
+    const cx = caixa();
+    pintar(cx, "Buscando as suas respostas…", '<p class="pcx-fonte">Falando com o Painel…</p>');
+    const resp = await pedir({ tipo: "respostas", url: location.href, titulo: document.title });
+    if (!resp || !resp.ok) {
+      return pintar(cx, "❌ Não deu certo", '<p class="pcx-fonte">' + esc((resp && resp.erro) || "erro desconhecido") + "</p>");
+    }
+    const d = resp.d || {};
+    const respostas = (d.campos || []).filter((c) => c.resposta);
+    if (!respostas.length) {
+      return pintar(cx, "Sem respostas salvas", '<p class="pcx-fonte">Não há nada preparado ainda. No Painel, marque a vaga e ' +
+        'clique em <b>Preparar candidaturas</b>.</p>');
+    }
+    if (!d.achou) {
+      // Preenche o que dá (cidade, pretensão, LinkedIn…) e oferece a escolha da vaga.
+      const res = preencher(respostas);
+      return relatorio(cx, res, "⚠ Não reconheci esta vaga — preenchi só os seus <b>dados padrão</b>. " +
+        "As perguntas específicas desta vaga ficaram em branco.", true);
+    }
+    const comoAchou = d.casou === "id" ? " (reconhecida pelo id da vaga)"
+      : d.casou === "titulo" ? " (reconhecida pelo título da página — confira se é ela mesma)" : "";
+    relatorio(cx, preencher(respostas),
+      "Respostas de: <b>" + esc(d.vaga.company || "") + "</b>" + (d.vaga.title ? " — " + esc(d.vaga.title) : "") + comoAchou, true);
+  }
+
+  window.__painelPreencher = preencherAgora;
 })();

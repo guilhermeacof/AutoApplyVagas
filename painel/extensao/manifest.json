@@ -1,19 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Painel de Candidaturas — preencher formulário",
-  "version": "1.0",
+  "version": "2.0",
   "description": "Preenche a tela de candidatura com as respostas salvas no seu Painel. Nunca envia: quem confere e clica em Enviar é você.",
+  "permissions": ["activeTab", "scripting"],
   "host_permissions": ["http://127.0.0.1:4599/*"],
   "background": { "service_worker": "background.js" },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.linkedin.com/jobs/*",
-        "https://*.gupy.io/*"
-      ],
-      "js": ["content.js"],
-      "css": ["content.css"],
-      "run_at": "document_idle"
-    }
-  ]
+  "action": { "default_title": "Preencher com o Painel de Candidaturas" }
 }

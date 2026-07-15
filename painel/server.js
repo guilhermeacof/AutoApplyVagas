@@ -249,6 +249,18 @@ function norm(s) {
 // vaga só preparada aparecia como concluída e a pessoa passava batido por ela.
 function ehPreparada(r) { return /^prepar/i.test(String(r.status || "").trim()); }
 
+// Quanto de `parte` aparece em `texto` (0 a 1), por palavras. Usada para reconhecer a
+// vaga pelo título da página quando o formulário está noutro domínio, sem id em comum.
+// Não é Dice de propósito: o título da página é longo e o nome da empresa é curto, e o
+// Dice pune essa diferença de tamanho — "…Automações - Experian" vs "Serasa Experian"
+// daria 0.29 e a vaga certa seria descartada. O que importa é a parte estar contida.
+function cobertura(texto, parte) {
+  const toks = (s) => norm(s).split(" ").filter((t) => t.length > 2);
+  const T = new Set(toks(texto)), P = toks(parte);
+  if (!T.size || !P.length) return 0;
+  return P.filter((t) => T.has(t)).length / P.length;
+}
+
 // Marca cada vaga cruzando com o tracker: aplicada (enviada) ou preparada (falta enviar).
 // Casamento principal: URL idêntica. Reforço: mesma empresa + título contido.
 function markApplied(jobs, tracker) {
@@ -945,13 +957,32 @@ const server = http.createServer((req, res) => {
     const campos = v && Array.isArray(v.campos) && v.campos.length ? v.campos : store.padrao;
     return res.end(JSON.stringify({ global: false, campos, atualizadoEm: v && v.atualizadoEm || null }));
   }
-  // GET /api/answers/for?url=…  → respostas da vaga que a extensão está vendo no portal.
-  // Casa por URL idêntica e, se não bater, pelo id da vaga (o portal muda a URL entre o
-  // anúncio e o formulário). Sem vaga conhecida, devolve os valores padrão — assim os
-  // campos gerais (cidade, pretensão, LinkedIn) ainda são preenchidos.
+  // GET /api/answers/list → vagas que têm respostas salvas. É o que a extensão mostra
+  // quando não reconhece a página, para a pessoa escolher a vaga na mão.
+  if (u.pathname === "/api/answers/list" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    const store = readAnswers();
+    const vagas = Object.entries(store.vagas || {})
+      .filter(([, v]) => (v.campos || []).some((c) => c.resposta))
+      .map(([url, v]) => ({ url, title: v.title || "", company: v.company || "",
+        campos: (v.campos || []).filter((c) => c.resposta).length, atualizadoEm: v.atualizadoEm || "" }))
+      .sort((a, b) => String(b.atualizadoEm).localeCompare(String(a.atualizadoEm)));
+    return res.end(JSON.stringify({ vagas }));
+  }
+
+  // GET /api/answers/for?url=…&titulo=…  → respostas da vaga que a extensão está vendo.
+  // Três tentativas, da mais confiável para a menos:
+  //   1. URL idêntica;
+  //   2. mesmo id de vaga (o portal muda a URL entre o anúncio e o formulário);
+  //   3. semelhança com o título da PÁGINA — porque o anúncio e o formulário podem estar
+  //      em domínios diferentes (o radar guarda a vaga do Serasa no br.linkedin.com, mas
+  //      candidatar-se joga a pessoa no jobs.smartrecruiters.com, com outro id). Aqui a URL
+  //      não ajuda em nada e só o texto da página liga uma coisa à outra.
+  // Sem nada disso, devolve os valores padrão e a extensão oferece a escolha manual.
   if (u.pathname === "/api/answers/for" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     const alvo = (u.searchParams.get("url") || "").trim();
+    const titulo = (u.searchParams.get("titulo") || "").trim();
     const store = readAnswers();
     let vaga = store.vagas[alvo] || null;
     let casou = vaga ? "url" : null;
@@ -962,6 +993,19 @@ const server = http.createServer((req, res) => {
           if (idVaga(url) === id) { vaga = v; casou = "id"; break; }
         }
       }
+    }
+    if (!vaga && titulo) {
+      // Exige empresa E cargo aparecendo na página: preencher a vaga errada com as
+      // respostas de outra é pior do que não preencher nada. Na dúvida, a extensão
+      // pergunta em vez de chutar.
+      let melhor = null;
+      for (const v of Object.values(store.vagas)) {
+        if (!(v.campos || []).some((c) => c.resposta)) continue;
+        const emp = cobertura(titulo, v.company || ""), car = cobertura(titulo, v.title || "");
+        const s = (emp + car) / 2;
+        if (emp >= 0.5 && car >= 0.5 && (!melhor || s > melhor.s)) melhor = { v, s };
+      }
+      if (melhor) { vaga = melhor.v; casou = "titulo"; }
     }
     if (!vaga) return res.end(JSON.stringify({ achou: false, campos: store.padrao }));
     return res.end(JSON.stringify({

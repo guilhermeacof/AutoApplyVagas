@@ -4,16 +4,15 @@
 
 O QUE ELA FAZ
 -------------
-Na tela de candidatura do LinkedIn ou da Gupy, aparece um botão verde no canto
-inferior direito: "📋 Preencher com o Painel". Ao clicar, ela busca no seu Painel
-as respostas daquela vaga e preenche os campos que reconhecer.
+Em QUALQUER site de vaga, você clica no ícone da extensão e ela preenche o
+formulário de candidatura com as respostas que o Painel preparou para aquela vaga.
 
 O QUE ELA NÃO FAZ (e nunca vai fazer)
 -------------------------------------
 NÃO clica em "Enviar" / "Candidatar-se". Ela preenche e para.
 Conferir e enviar é sempre seu — candidatura é irreversível e sai no seu nome.
 
-Também não sobrescreve campo que o portal já preencheu (seu e-mail, seu telefone).
+Também não sobrescreve campo que o site já preencheu (seu nome, e-mail, telefone).
 
 
 COMO INSTALAR (uma vez só, leva 1 minuto)
@@ -29,58 +28,93 @@ COMO INSTALAR (uma vez só, leva 1 minuto)
 4. Escolha ESTA pasta:
        D:\AutoApplyVagas\painel\extensao
 
-5. Pronto. A extensão aparece na lista.
+5. IMPORTANTE — deixe o ícone à vista: clique na peça de quebra-cabeça 🧩 na
+   barra do navegador, ache "Painel de Candidaturas" e clique no alfinete 📌.
+   O ícone é o botão que dispara o preenchimento; sem fixar, ele fica escondido.
 
-Obs.: o "Modo do desenvolvedor" precisa ficar ligado. O Chrome mostra um aviso
-"desative as extensões em modo de desenvolvedor" de vez em quando — pode fechar,
-é só um alerta padrão para extensões que não vêm da loja.
+Se você já tinha a versão antiga instalada: vá em chrome://extensions e clique
+em "Atualizar"/"Recarregar" no card da extensão. A versão antiga tinha um botão
+verde na página; agora o gatilho é o ícone (veja "POR QUE PELO ÍCONE" abaixo).
 
 
 COMO USAR
 ---------
 1. Deixe o Painel aberto (a janela preta rodando). A extensão fala com ele.
 
-2. No Painel, prepare as respostas da vaga: marque as vagas e clique em
-   "Preparar candidaturas" (ou abra a vaga → "Respostas do formulário").
+2. No Painel, prepare as respostas da vaga: marque a vaga e clique em
+   "Preparar candidaturas". (Sem isso ela só tem os seus dados padrão.)
 
-3. Abra a vaga no LinkedIn/Gupy e clique em "Candidate-se".
+3. Abra a vaga no site e vá até a tela de candidatura.
 
-4. Clique no botão verde "📋 Preencher com o Painel".
+4. Clique no ícone da extensão. Ela preenche e mostra um relatório do que fez.
 
-5. CONFIRA tudo. Corrija o que estiver errado. Depois clique em Enviar você mesmo.
+5. CONFIRA tudo. Preencha o que ficou em branco. Depois clique em Enviar
+   você mesmo.
 
-O formulário do LinkedIn tem várias páginas ("1 de 4"). Clique no botão verde
-de novo em cada página.
+Formulário de várias páginas (o "1 de 4" do LinkedIn)? Clique no ícone de novo
+a cada página.
+
+
+SE ELA NÃO RECONHECER A VAGA
+----------------------------
+Acontece bastante, e é normal: o anúncio e o formulário costumam estar em
+domínios diferentes. A vaga do Serasa, por exemplo, fica no LinkedIn no radar,
+mas "candidatar-se" joga você no jobs.smartrecruiters.com, com outro endereço e
+outro código. Não há como ligar as duas coisas pelo endereço.
+
+Quando isso acontece, ela preenche os seus dados padrão (cidade, pretensão,
+LinkedIn...) e mostra o link "Não é esta vaga? Escolher outra". Clique nele,
+escolha a vaga na lista, e ela preenche as respostas específicas.
+
+Isso também serve quando ela reconhecer a vaga ERRADA: o mesmo link troca.
+
+
+POR QUE PELO ÍCONE, E NÃO SOZINHA NA PÁGINA
+-------------------------------------------
+Suas vagas vêm de mais de 60 sites diferentes (LinkedIn, vagas.com.br, InfoJobs,
+Empregos, dezenas de subdomínios da Gupy, Greenhouse, Lever, SmartRecruiters,
+Workday, InHire, Solides...), e o link do anúncio ainda redireciona para o
+sistema da empresa. Qualquer lista fixa de sites nasceria incompleta.
+
+A alternativa seria a extensão rodar em TODOS os sites que você abre — inclusive
+banco e e-mail. Para um preenchedor de formulário isso é invasivo demais.
+
+Com o gatilho no ícone, ela só enxerga a aba em que você clicou, no momento em
+que você clica. Mais nada.
 
 
 O QUE ESPERAR (seja realista)
 -----------------------------
 O casamento entre a pergunta do site e a sua resposta salva é por semelhança de
-texto — ele ERRA às vezes. Por isso o relatório mostra, campo a campo, o que foi
+texto — ele ERRA às vezes. O relatório mostra, campo a campo, o que foi
 preenchido e com base em qual pergunta sua, e marca em amarelo os casamentos de
-que ele tem menos certeza. Os campos sem resposta salva ficam em branco e
-aparecem listados no fim.
+que ele tem menos certeza.
+
+Campos que ficaram em branco aparecem listados no fim. Alguns ficam em branco de
+propósito: numa pergunta Sim/Não, ela só marca a opção se a sua resposta começar
+com "sim" ou "não". Se a resposta for um texto descrevendo sua experiência, ela
+NÃO chuta — porque marcar "Sim" quando o seu texto talvez diga "não trabalhei
+com isso" faria você afirmar algo falso no formulário.
 
 Sempre releia antes de enviar.
 
 
 PROBLEMAS
 ---------
+Cliquei no ícone e não aconteceu nada
+    A extensão não roda em páginas internas do navegador (chrome://, a loja de
+    extensões). Abra a vaga num site normal.
+
 "não consegui falar com o Painel"
     O Painel está fechado. Abra o "Abrir Painel.bat" e tente de novo.
 
-"Não achei esta vaga no Painel"
-    Você ainda não preparou as respostas dessa vaga. Ele preenche só os seus
-    dados padrão (cidade, pretensão, LinkedIn). Prepare a vaga no Painel para
-    as perguntas específicas dela.
-
-O botão não aparece
-    A extensão só entra em páginas do LinkedIn (/jobs/...) e da Gupy. Se a vaga
-    for de outro site, não vai funcionar.
+"Não há nada preparado ainda"
+    Nenhuma vaga tem respostas salvas. No Painel, marque a vaga e clique em
+    "Preparar candidaturas".
 
 
 PRIVACIDADE
 -----------
 A extensão só fala com o seu Painel local (127.0.0.1:4599), que roda na sua
-máquina. Nada é enviado para a internet. Ela não lê outras abas nem outros sites:
-o manifest limita o acesso a linkedin.com/jobs e gupy.io.
+máquina. Nada é enviado para a internet. Ela não fica lendo suas abas: só age
+na aba em que você clicou no ícone, e só naquele momento.
