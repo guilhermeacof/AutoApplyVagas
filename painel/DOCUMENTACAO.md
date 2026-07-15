@@ -125,6 +125,30 @@ e reaproveitado como está. Ao **preparar candidatura**, o painel instrui o assi
 
 ## Changelog
 
+### 2026-07-15 — explicação ao passar o mouse em "recomendadas" e "descartadas"
+O card "Já avaliadas" mostrava "115 recomendadas · 89 descartadas" sem dizer o motivo — o
+usuário não tinha como saber o que reprovou uma vaga. Agora as duas partes são alvos de
+tooltip (`.hint`), e o texto é **montado a partir dos dados**, nunca escrito à mão: o
+`buildState` devolve `resumo.motivos` com a contagem por motivo, e `subAvaliadas()` no
+painel transforma isso em frase. Se os números mudarem, o texto muda junto.
+- `readAllJobs` passou a expor `local` (o `rank_location`: PASS/FLAG/FAIL), que é o que
+  permite separar os motivos.
+- **Descartadas** → quantas por localização e quantas por veto na análise, o que cada
+  motivo significa, e o lembrete de que elas continuam no radar (chip "Todas").
+  Nos dados atuais: 87 por localização, 2 vetadas na análise.
+- **Recomendadas** → deixa explícito que "recomendada" só quer dizer **"passou no veto de
+  localização"**, e não "é boa". Isso apareceu ao conferir os dados: das 115, **9 são Weak
+  Fit e 6 são Poor Fit** (uma vaga de social media com nota 16 estava contada como
+  "recomendada"). O tooltip mostra a quebra por banda e alerta quantas têm nota baixa.
+- Conferência automática: as somas fecham (87+2 = 89 descartadas; as bandas e a quebra por
+  localização somam 115 cada).
+- Detalhes de implementação: o tooltip é feito à mão porque o nativo demora ~1s e não
+  quebra linha. Abre **para baixo** (os cards ficam no topo — para cima saía da tela) e tem
+  largura própria (o card tem ~170px, o que espremia o texto numa coluna de 405px de
+  altura). Testado: dentro da viewport, nada corta (nenhum ancestral com overflow) e nada
+  fica por cima; em 436px de largura não vaza nem gera rolagem lateral. Funciona também por
+  teclado (`tabindex="0"` + `:focus`).
+
 ### 2026-07-15 — filtro anti-lixo na busca + tudo em PARALELO
 **1) Anti-lixo.** O radar enchia de vaga de RH, técnico de enfermagem, pesquisador de
 cosméticos e analista contábil. A causa: vários portais fazem busca **"OU"** entre as

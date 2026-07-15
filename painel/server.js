@@ -164,6 +164,7 @@ function readAllJobs() {
       deadline: e.deadline || null, status: e.status,
       score: e.rank_score ?? null, verdict: e.rank_verdict || null,
       fit: e.fit || null, gaps: e.rank_notes || null,
+      local: e.rank_location || null,   // PASS | FLAG | FAIL — motivo do descarte
       // Vetada por localização (ex.: híbrido fora do DF) — fica fora das "recomendadas".
       vetada: /excluded/i.test(e.rank_verdict || "") || e.rank_location === "FAIL",
     }))
@@ -223,6 +224,14 @@ function buildState() {
     const d = Math.round((new Date(j.deadline + "T12:00:00") - hoje) / 864e5);
     return d >= 0 && d <= 7;
   });
+  // Por que cada grupo ficou desse tamanho — vira o texto que aparece ao passar o mouse.
+  // Contado dos dados reais, não escrito à mão, para nunca descrever algo que mudou.
+  const porLocal = (js, v) => js.filter((j) => j.local === v).length;
+  const banda = (j) =>
+    j.score >= 75 ? "strong" : j.score >= 60 ? "good" : j.score >= 45 ? "moderate"
+      : j.score >= 30 ? "weak" : "poor";
+  const bandas = (js) => js.reduce((a, j) => ((a[banda(j)] = (a[banda(j)] || 0) + 1), a), {});
+
   return {
     perfil: readProfileState(),
     cargo: readConfig().cargo || "",
@@ -234,6 +243,19 @@ function buildState() {
       naFila: naFila.length,              // ainda sem nota
       candidaturas: tracker.length,
       urgentes: urgentes.length,
+      // Detalhe dos motivos (para o tooltip dos cards).
+      motivos: {
+        descarte: {
+          localizacao: porLocal(descartadas, "FAIL"),
+          veto: descartadas.filter((j) => /excluded/i.test(j.verdict || "") && j.local !== "FAIL").length,
+        },
+        recomendadas: {
+          pass: porLocal(recomendadas, "PASS"),
+          flag: porLocal(recomendadas, "FLAG"),
+          semLocal: recomendadas.filter((j) => !j.local).length,
+          bandas: bandas(recomendadas),
+        },
+      },
     },
     candidaturas: tracker.map((r) => ({
       empresa: r.company, vaga: r.role, status: r.status,

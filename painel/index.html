@@ -29,7 +29,29 @@ header p{margin:0;color:var(--ink-2)}
 
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0}
 .card .csub{display:block;margin-top:4px;font-size:11.5px;color:var(--ink-2);opacity:.9;line-height:1.35}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);position:relative}
+
+/* Explicação ao passar o mouse: por que a vaga entrou nesse grupo. O tooltip nativo do
+   navegador demora ~1s e não quebra linha, então é feito na mão. Fica também no :focus
+   para funcionar pelo teclado. */
+.hint{border-bottom:1px dotted var(--ink-2);cursor:help;outline:none}
+.hint:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:3px}
+/* Abre PARA BAIXO: os cards ficam no topo da página, e para cima o balão saía da tela.
+   Largura própria (o card tem ~170px, o que espremia o texto numa coluna altíssima),
+   centrado no card e livre para transbordar as bordas dele. */
+.hint .tip{
+  position:absolute;top:calc(100% - 6px);left:50%;z-index:30;
+  width:max(240px,100%);max-width:min(330px,86vw);
+  background:#0f1c1a;color:#e8f0ee;border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;font-size:12px;line-height:1.5;text-transform:none;letter-spacing:0;
+  box-shadow:0 10px 28px rgba(0,0,0,.45);
+  opacity:0;visibility:hidden;transform:translateX(-50%) translateY(-4px);
+  transition:opacity .12s,transform .12s;
+  pointer-events:none;text-align:left;white-space:normal;font-weight:400
+}
+.hint:hover .tip,.hint:focus .tip{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
+.hint .tip b{display:inline;font-size:12px;font-weight:700;line-height:1.5}
+.hint .tip .porque{display:block;margin-top:6px;color:var(--ink-2);font-size:11.5px}
 .card b{display:block;font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .card span{font-size:12.5px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
 .card.urg b{color:var(--urgent)}
@@ -551,7 +573,7 @@ async function loadState(){
     const r = s.resumo;
     $("#cards").innerHTML =
       card(r.totalVagas, "Vagas no radar") +
-      card(r.avaliadas, "Já avaliadas", false, r.recomendadas+" recomendadas · "+r.descartadas+" descartadas") +
+      card(r.avaliadas, "Já avaliadas", false, {html: subAvaliadas(r)}) +
       card(r.naFila, "Na fila (sem nota)", r.naFila>0, r.naFila>0 ? "clique em Avaliar e ranquear" : "tudo avaliado ✓") +
       card(r.candidaturas, "Candidaturas enviadas") +
       card(r.urgentes, "Prazo ≤ 7 dias", true);
@@ -585,7 +607,52 @@ function applyProfile(p){
       : "Dois passos rápidos e o assistente já sabe quem é você.";
   }
 }
-function card(n,label,urg,sub){ return `<div class="card${urg?' urg':''}"><b>${n}</b><span>${label}</span>${sub?`<small class="csub">${esc(sub)}</small>`:""}</div>`; }
+// sub: texto simples (escapado) OU {html:"…"} quando precisa de marcação (ex.: tooltip).
+function card(n,label,urg,sub){
+  const s = !sub ? "" : (sub.html != null ? sub.html : esc(sub));
+  return `<div class="card${urg?' urg':''}"><b>${n}</b><span>${label}</span>${s?`<small class="csub">${s}</small>`:""}</div>`;
+}
+
+// "45 Strong, 41 Good e 6 Poor" — some com os zerados e usa "e" antes do último.
+function frase(partes){
+  const p = partes.filter(Boolean);
+  if(!p.length) return "";
+  if(p.length===1) return p[0];
+  return p.slice(0,-1).join(", ")+" e "+p[p.length-1];
+}
+function hint(texto, tip){
+  return `<span class="hint" tabindex="0">${esc(texto)}<span class="tip" role="tooltip">${tip}</span></span>`;
+}
+
+// Sub-linha do card "Já avaliadas": explica, ao passar o mouse, POR QUE cada vaga caiu
+// em cada grupo. Os números vêm do servidor (contados dos dados), nunca escritos à mão.
+function subAvaliadas(r){
+  const m = r.motivos || {}, d = m.descarte || {}, x = m.recomendadas || {}, b = x.bandas || {};
+  const n = (v,s,p) => v ? v+" "+(v===1?s:(p||s)) : "";
+
+  // "Recomendadas" só quer dizer "não foi vetada por localização" — inclusive as de nota
+  // baixa. Dizer isso aqui evita o usuário achar que uma Poor Fit foi indicada a ele.
+  const local = frase([ n(x.pass,"remota ou aceita","remotas ou aceitas"),
+                        n(x.flag,"a confirmar (⚠)","a confirmar (⚠)"),
+                        n(x.semLocal,"sem local informado","sem local informado") ]);
+  const notas = frase([ n(b.strong,"Strong Fit"), n(b.good,"Good Fit"), n(b.moderate,"Moderate"),
+                        n(b.weak,"Weak"), n(b.poor,"Poor") ]);
+  const fracas = (b.weak||0)+(b.poor||0);
+  const tipReco =
+    `<b>Passaram no veto de localização.</b> Não quer dizer que são boas — só que dá para trabalhar nelas de onde você está.` +
+    (local ? `<span class="porque">Localização: ${local}.</span>` : "") +
+    (notas ? `<span class="porque">Por nota: ${notas}.</span>` : "") +
+    (fracas ? `<span class="porque">⚠ ${fracas} têm nota baixa (Weak/Poor): passaram no local, mas não combinam com o seu perfil.</span>` : "");
+
+  const motivos = frase([ n(d.localizacao,"por localização"), n(d.veto,"vetada na análise","vetadas na análise") ]);
+  const tipDesc =
+    `<b>Foram avaliadas e reprovadas${motivos ? ": "+motivos : ""}.</b>` +
+    (d.localizacao ? `<span class="porque">Localização: são presenciais ou híbridas fora do DF, ou exigem mudar de cidade — o seu perfil exige trabalho remoto.</span>` : "") +
+    (d.veto ? `<span class="porque">Vetadas na análise: algo no anúncio é impeditivo (o motivo fica em “o que falta” na linha da vaga).</span>` : "") +
+    `<span class="porque">Elas continuam no radar: clique em <b>Todas</b> para vê-las e conferir o motivo de cada uma.</span>`;
+
+  return hint(r.recomendadas+" recomendadas", tipReco) + " · " + hint(r.descartadas+" descartadas", tipDesc);
+}
 function jobRow(j,i){
   const prazo = j.deadline ? ` <span class="tag prazo">fecha ${j.deadline.slice(8,10)}/${j.deadline.slice(5,7)}</span>` : "";
   const ok = j.aplicada ? ` <span class="tag ok">✓ já inscrito</span>` : "";
