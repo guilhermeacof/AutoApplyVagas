@@ -50,6 +50,27 @@ function camposSugeridos() {
   return CAMPOS_SUGERIDOS.map((pergunta) => ({ pergunta, resposta: "" }));
 }
 
+// A URL do anúncio (a que o radar guarda) quase nunca é a mesma da tela onde a pessoa
+// se candidata: o LinkedIn troca o subdomínio e o slug, a Gupy muda os parâmetros. Só
+// o id da vaga sobrevive aos dois. É por ele que a extensão acha as respostas certas.
+function idVaga(u) {
+  const s = String(u || "");
+  const li = s.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d{6,})/);      // …/jobs/view/titulo-slug-4440831674
+  if (li) return "li:" + li[1];
+  // Navegando pela lista/coleções o LinkedIn não troca de página: a vaga aberta vai no
+  // currentJobId. É daí que sai o "Candidate-se" na maioria das vezes.
+  const liLista = s.match(/[?&]currentJobId=(\d{6,})/);
+  if (liLista) return "li:" + liLista[1];
+  const gu = s.match(/\/job\/([A-Za-z0-9+/=%]+)/);                 // …/job/<base64 com o jobId>
+  if (gu) {
+    try {
+      const j = JSON.parse(Buffer.from(decodeURIComponent(gu[1]), "base64").toString("utf8"));
+      if (j && j.jobId != null) return "gupy:" + j.jobId;
+    } catch { /* não era base64 de JSON: cai fora */ }
+  }
+  return null;
+}
+
 function readAnswers() {
   try {
     const j = JSON.parse(fs.readFileSync(ANSWERS_FILE, "utf8"));
@@ -927,6 +948,32 @@ const server = http.createServer((req, res) => {
     const campos = v && Array.isArray(v.campos) && v.campos.length ? v.campos : store.padrao;
     return res.end(JSON.stringify({ global: false, campos, atualizadoEm: v && v.atualizadoEm || null }));
   }
+  // GET /api/answers/for?url=…  → respostas da vaga que a extensão está vendo no portal.
+  // Casa por URL idêntica e, se não bater, pelo id da vaga (o portal muda a URL entre o
+  // anúncio e o formulário). Sem vaga conhecida, devolve os valores padrão — assim os
+  // campos gerais (cidade, pretensão, LinkedIn) ainda são preenchidos.
+  if (u.pathname === "/api/answers/for" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    const alvo = (u.searchParams.get("url") || "").trim();
+    const store = readAnswers();
+    let vaga = store.vagas[alvo] || null;
+    let casou = vaga ? "url" : null;
+    if (!vaga) {
+      const id = idVaga(alvo);
+      if (id) {
+        for (const [url, v] of Object.entries(store.vagas)) {
+          if (idVaga(url) === id) { vaga = v; casou = "id"; break; }
+        }
+      }
+    }
+    if (!vaga) return res.end(JSON.stringify({ achou: false, campos: store.padrao }));
+    return res.end(JSON.stringify({
+      achou: true, casou,
+      vaga: { title: vaga.title || "", company: vaga.company || "" },
+      campos: vaga.campos || [],
+    }));
+  }
+
   // POST /api/answers  {url?, title?, company?, campos:[{pergunta,resposta}], salvarPadrao?}
   if (u.pathname === "/api/answers" && req.method === "POST") {
     const chunks = [];

@@ -30,6 +30,7 @@ Navegador (index.html)  ──HTTP──>  server.js (Node, local)  ──stdin�
 | `server.js` | Servidor HTTP local. Lê o estado do workspace, serve a interface e executa o Claude Code por trás dos botões. Usa `__dirname`, então funciona sendo chamado da raiz. |
 | `index.html` | A interface (tela + lógica). |
 | `config.json` | Guarda o **cargo-alvo** escolhido pelo usuário. |
+| `extensao/` | Extensão de navegador que preenche a tela de candidatura do LinkedIn/Gupy com as respostas salvas. **Nunca envia** — preenche e para. Instalação em `extensao/LEIA-ME.txt`. |
 | `LEIA-ME.txt` | Instruções de uso diário + instalação única (pré-requisitos). |
 | `DOCUMENTACAO.md` | Este arquivo. |
 
@@ -47,6 +48,7 @@ Navegador (index.html)  ──HTTP──>  server.js (Node, local)  ──stdin�
 | `POST /api/trust` | Marca a pasta do projeto como **confiável** no `~/.claude.json` (`hasTrustDialogAccepted: true`, em todas as variações do caminho), fazendo backup antes. Resolve o erro "workspace has not been trusted" com um clique, sem a pessoa editar arquivo. |
 | `GET /api/answers?url=…` | Respostas de formulário da vaga (ou os valores **padrão** reutilizáveis, se `url` ausente). Se a vaga ainda não tem respostas, começa a partir do padrão. |
 | `POST /api/answers` | Salva `{url?, title?, company?, campos:[{pergunta,resposta}], salvarPadrao?}`. Grava em `documents/form_answers.json` e uma cópia legível em `documents/respostas/<empresa - vaga>.md` (registro). `salvarPadrao` (ou `url` ausente) também atualiza os valores padrão. |
+| `GET /api/answers/for?url=…` | Respostas para a vaga que a **extensão** está vendo no portal. Casa por URL idêntica e, se não bater, pelo **id da vaga** (`idVaga()`: `/jobs/view/…-<id>`, `currentJobId=<id>`, ou o `jobId` no base64 da Gupy) — a URL do anúncio no radar nunca é igual à da tela de candidatura. Sem vaga conhecida: `{achou:false, campos:<padrão>}`. |
 | `POST /api/bulk-apply` | Recebe `{jobs:[{url,title,company}]}` (máx. 20) e prepara cada uma **em paralelo** (`CONCORRENCIA = 5`, um assistente por vaga). Sem carta: o assistente lê o anúncio e devolve as respostas de formulário; **quem grava é o servidor** (`form_answers.json`, `documents/respostas/*.md` e a linha no tracker com `status: prepared`). NDJSON: `{passo}`, `{log}`, `{aviso}`, `{fim}`. Pula vaga já registrada no tracker. |
 | `POST /api/bulk-analyze` | Recebe `{jobs:[{url,title,company}]}` e devolve, numa só chamada ao Claude, os itens **agregados** que faltam no CV e dá para adicionar: `{adicionaveis:[{item,sugestao,vagas:[…]}], lacunas:[{item,explicacao}]}`. |
 | `POST /api/bulk-adjust` | Recebe `{items:[…], jobs:[…]}`, adiciona ao CV/perfil só o que foi confirmado e **reavalia todas as vagas** de uma vez: `{resultados:[{url,notaAntes,notaDepois}], resumo}`. |

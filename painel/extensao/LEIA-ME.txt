@@ -1,0 +1,86 @@
+===========================================================
+ PREENCHER FORMULÁRIO — extensão do Painel de Candidaturas
+===========================================================
+
+O QUE ELA FAZ
+-------------
+Na tela de candidatura do LinkedIn ou da Gupy, aparece um botão verde no canto
+inferior direito: "📋 Preencher com o Painel". Ao clicar, ela busca no seu Painel
+as respostas daquela vaga e preenche os campos que reconhecer.
+
+O QUE ELA NÃO FAZ (e nunca vai fazer)
+-------------------------------------
+NÃO clica em "Enviar" / "Candidatar-se". Ela preenche e para.
+Conferir e enviar é sempre seu — candidatura é irreversível e sai no seu nome.
+
+Também não sobrescreve campo que o portal já preencheu (seu e-mail, seu telefone).
+
+
+COMO INSTALAR (uma vez só, leva 1 minuto)
+-----------------------------------------
+1. Abra o Chrome (ou Edge) e digite na barra de endereço:
+       chrome://extensions
+   (no Edge:  edge://extensions )
+
+2. Ligue o "Modo do desenvolvedor" (canto superior direito).
+
+3. Clique em "Carregar sem compactação" ("Load unpacked").
+
+4. Escolha ESTA pasta:
+       D:\AutoApplyVagas\painel\extensao
+
+5. Pronto. A extensão aparece na lista.
+
+Obs.: o "Modo do desenvolvedor" precisa ficar ligado. O Chrome mostra um aviso
+"desative as extensões em modo de desenvolvedor" de vez em quando — pode fechar,
+é só um alerta padrão para extensões que não vêm da loja.
+
+
+COMO USAR
+---------
+1. Deixe o Painel aberto (a janela preta rodando). A extensão fala com ele.
+
+2. No Painel, prepare as respostas da vaga: marque as vagas e clique em
+   "Preparar candidaturas" (ou abra a vaga → "Respostas do formulário").
+
+3. Abra a vaga no LinkedIn/Gupy e clique em "Candidate-se".
+
+4. Clique no botão verde "📋 Preencher com o Painel".
+
+5. CONFIRA tudo. Corrija o que estiver errado. Depois clique em Enviar você mesmo.
+
+O formulário do LinkedIn tem várias páginas ("1 de 4"). Clique no botão verde
+de novo em cada página.
+
+
+O QUE ESPERAR (seja realista)
+-----------------------------
+O casamento entre a pergunta do site e a sua resposta salva é por semelhança de
+texto — ele ERRA às vezes. Por isso o relatório mostra, campo a campo, o que foi
+preenchido e com base em qual pergunta sua, e marca em amarelo os casamentos de
+que ele tem menos certeza. Os campos sem resposta salva ficam em branco e
+aparecem listados no fim.
+
+Sempre releia antes de enviar.
+
+
+PROBLEMAS
+---------
+"não consegui falar com o Painel"
+    O Painel está fechado. Abra o "Abrir Painel.bat" e tente de novo.
+
+"Não achei esta vaga no Painel"
+    Você ainda não preparou as respostas dessa vaga. Ele preenche só os seus
+    dados padrão (cidade, pretensão, LinkedIn). Prepare a vaga no Painel para
+    as perguntas específicas dela.
+
+O botão não aparece
+    A extensão só entra em páginas do LinkedIn (/jobs/...) e da Gupy. Se a vaga
+    for de outro site, não vai funcionar.
+
+
+PRIVACIDADE
+-----------
+A extensão só fala com o seu Painel local (127.0.0.1:4599), que roda na sua
+máquina. Nada é enviado para a internet. Ela não lê outras abas nem outros sites:
+o manifest limita o acesso a linkedin.com/jobs e gupy.io.
