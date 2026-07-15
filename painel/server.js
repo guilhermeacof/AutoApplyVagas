@@ -221,16 +221,30 @@ function norm(s) {
     .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-// Marca cada vaga como "já inscrita" cruzando com o tracker de candidaturas.
+// Estar no tracker NÃO quer dizer candidatura enviada: o painel só PREPARA os
+// documentos e as respostas — quem envia no portal é a pessoa. Linha "prepared" =
+// pronta, falta enviar. Qualquer outro status (applied, interview, rejected…) = foi
+// enviada mesmo. Antes o painel dava "✓ já inscrito" para QUALQUER linha, então uma
+// vaga só preparada aparecia como concluída e a pessoa passava batido por ela.
+function ehPreparada(r) { return /^prepar/i.test(String(r.status || "").trim()); }
+
+// Marca cada vaga cruzando com o tracker: aplicada (enviada) ou preparada (falta enviar).
 // Casamento principal: URL idêntica. Reforço: mesma empresa + título contido.
 function markApplied(jobs, tracker) {
-  const urls = new Set(tracker.map((r) => (r.source || "").trim()).filter(Boolean));
-  const pares = tracker.map((r) => ({ c: norm(r.company), t: norm(r.role) })).filter((p) => p.c);
+  const indexar = (rows) => ({
+    urls: new Set(rows.map((r) => (r.source || "").trim()).filter(Boolean)),
+    pares: rows.map((r) => ({ c: norm(r.company), t: norm(r.role) })).filter((p) => p.c),
+  });
+  const enviadas = indexar(tracker.filter((r) => !ehPreparada(r)));
+  const prontas = indexar(tracker.filter(ehPreparada));
+  const bate = (ix, j, jc, jt) =>
+    ix.urls.has((j.url || "").trim()) ||
+    ix.pares.some((p) => p.c === jc && p.t && jt && (jt.includes(p.t) || p.t.includes(jt)));
   return jobs.map((j) => {
     const jc = norm(j.company), jt = norm(j.title);
-    const aplicada = urls.has((j.url || "").trim()) ||
-      pares.some((p) => p.c === jc && p.t && jt && (jt.includes(p.t) || p.t.includes(jt)));
-    return { ...j, aplicada };
+    const aplicada = bate(enviadas, j, jc, jt);
+    // Enviada ganha de preparada: se a pessoa preparou e depois enviou, vale enviada.
+    return { ...j, aplicada, preparada: !aplicada && bate(prontas, j, jc, jt) };
   });
 }
 
@@ -286,7 +300,10 @@ function buildState() {
       empresa: r.company, vaga: r.role, status: r.status,
       data: r.date, score: r.fit_rating,
     })),
-    aplicadasUrls: tracker.map((r) => (r.source || "").trim()).filter(Boolean),
+    // Só as REALMENTE enviadas: é isto que dispara o aviso "você já se candidatou" ao
+    // colar um link. Incluir as preparadas aqui avisaria sobre vaga nunca enviada.
+    // (O estado "preparada" por vaga vai em vagas[].preparada, vindo do markApplied.)
+    aplicadasUrls: tracker.filter((r) => !ehPreparada(r)).map((r) => (r.source || "").trim()).filter(Boolean),
     // TODAS as vagas (a interface filtra: recomendadas / todas / nota mínima).
     vagas: all,
   };

@@ -185,8 +185,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
 .tag.prazo{background:var(--urgent-soft);color:var(--urgent)}
 .tag.ok{background:rgba(30,125,70,.15);color:var(--good)}
+.tag.falta{background:rgba(200,140,0,.16);color:#8a6d00}
 tr.aplicada{background:rgba(30,125,70,.07)}
 tr.aplicada td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+/* Preparada NÃO usa o verde de concluído: ainda falta a pessoa enviar no portal. */
+tr.preparada{background:rgba(200,140,0,.06)}
+tr.preparada td:first-child{box-shadow:inset 3px 0 0 #c88c00}
 
 .console{margin-top:22px;background:#0d1512;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:none}
 .console.on{display:block}
@@ -249,6 +253,7 @@ tr.aplicada td:first-child{box-shadow:inset 3px 0 0 var(--good)}
 .modal-actions .btn{width:auto;flex:1;min-width:150px;justify-content:center}
 .mclose{position:sticky;top:0;float:right;background:none;border:0;font-size:22px;line-height:1;color:var(--ink-2);cursor:pointer;padding:14px 18px}
 .applied-warn{background:rgba(30,125,70,.12);color:var(--good);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:6px}
+.prep-warn{background:rgba(200,140,0,.12);color:#8a6d00;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:6px}
 .rodape{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);text-align:center;color:var(--ink-2);font-size:13px}
 .rodape a{color:var(--accent);text-decoration:none;font-weight:600}
 .rodape a:hover{text-decoration:underline}
@@ -674,10 +679,13 @@ function subAvaliadas(r){
 }
 function jobRow(j,i){
   const prazo = j.deadline ? ` <span class="tag prazo">fecha ${j.deadline.slice(8,10)}/${j.deadline.slice(5,7)}</span>` : "";
-  const ok = j.aplicada ? ` <span class="tag ok">✓ já inscrito</span>` : "";
+  // "já inscrito" só para quem foi REALMENTE enviada. Preparada é um alerta, não um
+  // troféu: os documentos estão prontos e a vaga ainda depende de você enviar.
+  const ok = j.aplicada ? ` <span class="tag ok">✓ já inscrito</span>`
+           : j.preparada ? ` <span class="tag falta">📋 pronta — falta você enviar</span>` : "";
   const url = (j.url||"").replace(/"/g,"&quot;");
   const chk = SELEC.has(j.url) ? " checked" : "";
-  return `<tr class="jobrow ${j.aplicada?'aplicada':''}" data-idx="${i}">
+  return `<tr class="jobrow ${j.aplicada?'aplicada':''} ${j.preparada?'preparada':''}" data-idx="${i}">
     <td class="selcol"><input type="checkbox" class="jobsel" value="${url}"${chk}></td>
     <td class="jobtitle"><span>${esc(j.title)}</span>
     <small>${esc(j.company||"—")}${prazo}${ok}</small></td>
@@ -729,7 +737,11 @@ function openDetail(j){
     g.innerHTML = '<p style="color:var(--ink-2);margin:0">Ainda sem detalhes desta vaga. Clique em <b>Analisar meu currículo</b> para uma análise completa.</p>';
     $("#mGapNote").style.display="none"; $("#mAddReval").style.display="none";
   }
-  $("#mApplied").innerHTML = j.aplicada ? '<div class="applied-warn">✓ Você já se candidatou a esta vaga.</div>' : "";
+  $("#mApplied").innerHTML = j.aplicada
+    ? '<div class="applied-warn">✓ Você já se candidatou a esta vaga.</div>'
+    : j.preparada
+    ? '<div class="prep-warn">📋 Os documentos/respostas desta vaga estão prontos, mas ela <b>ainda não foi enviada</b> — abra o link da vaga e envie no portal.</div>'
+    : "";
   $("#overlay").classList.add("on");
 }
 function closeDetail(){ $("#overlay").classList.remove("on"); }
