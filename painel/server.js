@@ -35,15 +35,26 @@ function writeConfig(cfg) {
 const ANSWERS_FILE = path.join(WORKSPACE, "documents", "form_answers.json");
 
 // Perguntas comuns já sugeridas (rótulos; a pessoa preenche os valores uma vez).
+//
+// Os rótulos são BILÍNGUES de propósito. A extensão casa a pergunta do site com a
+// pergunta salva por semelhança de palavras, e muito formulário de multinacional é em
+// inglês ("First name", "City") enquanto as respostas aqui são em português — sem a
+// palavra em inglês no rótulo, "City*" não casa com "Cidade / Estado" (zero palavras em
+// comum) e o campo fica vazio. Ao carregar as duas línguas, o rótulo casa dos dois lados.
 const CAMPOS_SUGERIDOS = [
+  "Nome (First name)",
+  "Sobrenome (Last name)",
+  "E-mail (Email)",
+  "Telefone (Phone number)",
+  "Cidade / Estado (City)",
+  "LinkedIn",
+  "Website / Portfólio (Website)",
   "Pretensão salarial (CLT)",
   "Pretensão salarial (PJ)",
   "Última remuneração",
   "Regime de contratação aceito (CLT/PJ)",
   "Modelo de trabalho (remoto/híbrido/presencial)",
-  "Disponibilidade para início",
-  "Cidade / Estado",
-  "LinkedIn",
+  "Disponibilidade para início (availability / start date)",
 ];
 
 function camposSugeridos() {
@@ -1008,10 +1019,19 @@ const server = http.createServer((req, res) => {
       if (melhor) { vaga = melhor.v; casou = "titulo"; }
     }
     if (!vaga) return res.end(JSON.stringify({ achou: false, campos: store.padrao }));
+    // As respostas da vaga SOMAM ao padrão, não o substituem. Uma vaga guarda o que era
+    // padrão no dia em que foi preparada; sem esta soma, campo criado depois (nome,
+    // e-mail, telefone) nunca chegaria às vagas antigas — o formulário do SmartRecruiters
+    // ficava com tudo em branco menos o LinkedIn. A resposta da vaga sempre ganha.
+    const daVaga = vaga.campos || [];
+    const jaTem = new Set(daVaga.map((c) => norm(c.pergunta)));
+    const campos = daVaga.concat(
+      (store.padrao || []).filter((c) => c.resposta && !jaTem.has(norm(c.pergunta)))
+    );
     return res.end(JSON.stringify({
       achou: true, casou,
       vaga: { title: vaga.title || "", company: vaga.company || "" },
-      campos: vaga.campos || [],
+      campos,
     }));
   }
 

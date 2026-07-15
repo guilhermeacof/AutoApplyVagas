@@ -40,13 +40,17 @@
 
   function rotuloDe(el) {
     const textoDe = (n) => (n ? String(n.innerText || n.textContent || "").replace(/\s+/g, " ").trim() : "");
-    if (el.id) {
-      const l = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+    // O rótulo tem de ser procurado na raiz DO CAMPO, não no document: dentro de um
+    // shadow root o <label for="..."> vive lá dentro e o document não o enxerga.
+    const raiz = el.getRootNode();
+    if (el.id && raiz.querySelector) {
+      const l = raiz.querySelector('label[for="' + CSS.escape(el.id) + '"]');
       if (textoDe(l)) return textoDe(l);
     }
     if (el.getAttribute("aria-labelledby")) {
       const t = el.getAttribute("aria-labelledby").split(/\s+/)
-        .map((id) => textoDe(document.getElementById(id))).filter(Boolean).join(" ");
+        .map((id) => textoDe(raiz.getElementById ? raiz.getElementById(id) : document.getElementById(id)))
+        .filter(Boolean).join(" ");
       if (t) return t;
     }
     if (el.getAttribute("aria-label")) return el.getAttribute("aria-label").trim();
@@ -57,11 +61,29 @@
     // Último recurso: o texto logo acima do campo (padrão comum em formulários).
     const grupo = el.closest("div,section,li");
     if (grupo && textoDe(grupo).length < 300) return textoDe(grupo);
+    // Dentro de shadow DOM o campo costuma estar sozinho na sua raiz, sem nada acima:
+    // aí quem carrega o rótulo é o componente que hospeda o shadow (o host).
+    const host = raiz.host;
+    if (host) {
+      const t = host.getAttribute("label") || textoDe(host);
+      if (t && t.length < 300) return String(t).replace(/\s+/g, " ").trim();
+    }
     return el.name || el.placeholder || "";
   }
 
+  // Varre atravessando shadow roots. Sem isto a extensão fica CEGA nos ATS feitos com
+  // web components: no formulário do SmartRecruiters, um querySelectorAll comum acha 1
+  // campo (o upload) enquanto existem 15 — nome, e-mail, cidade, telefone, LinkedIn…
+  function todosOsCampos(raiz, achados = []) {
+    for (const el of raiz.querySelectorAll("*")) {
+      if (el.matches("input, textarea, select")) achados.push(el);
+      if (el.shadowRoot) todosOsCampos(el.shadowRoot, achados);
+    }
+    return achados;
+  }
+
   function camposDaTela() {
-    const nos = [...document.querySelectorAll("input, textarea, select")];
+    const nos = todosOsCampos(document);
     const grupos = new Map();   // radios do mesmo name viram UM campo
     const saida = [];
     for (const el of nos) {
@@ -95,12 +117,20 @@
   // React/Ember (LinkedIn, Gupy, SmartRecruiters…) ignoram el.value = x: eles guardam o
   // valor num estado interno e sobrescrevem na hora. É preciso chamar o setter nativo e
   // disparar os eventos na mão para o framework perceber a mudança.
+  // composed: true é obrigatório por causa do shadow DOM: sem isso o evento morre na
+  // borda do shadow e o web component que hospeda o campo (o <spl-form-field> do
+  // SmartRecruiters, por exemplo) nunca fica sabendo que o valor mudou — o campo
+  // parece preenchido na tela e chega vazio no envio.
+  function avisar(el, nome) {
+    el.dispatchEvent(new Event(nome, { bubbles: true, composed: true }));
+  }
+
   function escrever(el, valor) {
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
     setter.call(el, valor);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+    avisar(el, "input");
+    avisar(el, "change");
   }
 
   const preenchido = (c) =>
@@ -114,7 +144,7 @@
         .sort((a, b) => b.s - a.s).find((x) => x.s >= 0.5);
       if (!alvo) return null;
       campo.el.value = alvo.o.value;
-      campo.el.dispatchEvent(new Event("change", { bubbles: true }));
+      avisar(campo.el, "change");
       return alvo.o.text;
     }
     if (campo.tipo === "opcoes") {
@@ -135,19 +165,21 @@
   // ---------- preencher ----------
   const LIMITE = 0.45;   // abaixo disso o casamento é chute; melhor deixar em branco
 
+  // Cada campo pega a SUA melhor resposta, e a mesma resposta pode servir a mais de um
+  // campo. Antes uma resposta usada era bloqueada para as seguintes, o que quebrava o
+  // caso mais comum de todos: "Email" e "Confirm your email" querem o mesmo valor, e o
+  // segundo campo ficava vazio (ou pior, pegava uma resposta pior por descarte).
   function preencher(respostas) {
-    const usados = new Set();
     const feitos = [], semResposta = [];
     for (const campo of camposDaTela()) {
       if (preenchido(campo)) continue;   // não sobrescreve o que o portal já trouxe
       const cand = respostas
-        .map((r, i) => ({ i, r, s: semelhanca(campo.rotulo, r.pergunta) }))
-        .filter((x) => x.r.resposta && !usados.has(x.i) && x.s >= LIMITE)
+        .map((r) => ({ r, s: semelhanca(campo.rotulo, r.pergunta) }))
+        .filter((x) => x.r.resposta && x.s >= LIMITE)
         .sort((a, b) => b.s - a.s)[0];
       if (!cand) { semResposta.push(campo.rotulo); continue; }
       const escrito = aplicar(campo, cand.r.resposta);
       if (escrito == null) { semResposta.push(campo.rotulo); continue; }
-      usados.add(cand.i);
       feitos.push({ campo: campo.rotulo, pergunta: cand.r.pergunta, valor: escrito, conf: cand.s });
     }
     return { feitos, semResposta };

@@ -27,7 +27,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, responder) => {
     msg.tipo === "respostas" ? "/api/answers/for?url=" + encodeURIComponent(msg.url || "") +
       "&titulo=" + encodeURIComponent(msg.titulo || "")
     : msg.tipo === "lista" ? "/api/answers/list"
-    : msg.tipo === "vaga" ? "/api/answers?url=" + encodeURIComponent(msg.url || "")
+    // A vaga escolhida na mão vai pela MESMA rota (a URL exata casa direto). Assim ela
+    // também recebe o padrão somado — pelo /api/answers cru viria só o que a vaga tem.
+    : msg.tipo === "vaga" ? "/api/answers/for?url=" + encodeURIComponent(msg.url || "")
     : null;
   if (!rota) return;
   buscar(rota)
