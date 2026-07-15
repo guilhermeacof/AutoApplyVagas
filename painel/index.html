@@ -842,7 +842,7 @@ async function rankBatch(){
   $("#rResult").hidden=true; $("#rLog").hidden=false; $("#rLog").innerHTML='<span class="step">Iniciando…</span>';
   box.scrollIntoView({behavior:"smooth",block:"center"});
   rankCtrl=new AbortController();
-  let fim=null, erro=null, cancelado=false;
+  let fim=null, erro=null, cancelado=false, avisos=[];
   try{
     const r=await fetch("/api/rank-batch",{method:"POST",signal:rankCtrl.signal});
     const reader=r.body.getReader(), dec=new TextDecoder(); let buf="";
@@ -857,6 +857,7 @@ async function rankBatch(){
         if(o.log) $("#rLog").innerHTML='<span class="step">'+esc(o.log)+'</span>';
         if(o.fim) fim=o.fim;
         if(o.erro) erro=o;
+        if(o.aviso) avisos.push(o.aviso);   // lote que falhou: não some, aparece no fim
         if(o.cancelado) cancelado=true;
       }
     }
@@ -867,7 +868,9 @@ async function rankBatch(){
     $("#rResult").innerHTML=erroHtml(erro,"Erro ao avaliar:"); }
   else if(fim){ $("#rPct").textContent="100%"; $("#rFill").style.width="100%";
     $("#rMsg").textContent=fim.msg||"Concluído."; $("#rResult").hidden=false;
-    $("#rResult").innerHTML='<p style="margin:0">✓ '+esc(fim.msg||"")+'</p>'; }
+    $("#rResult").innerHTML='<p style="margin:0">✓ '+esc(fim.msg||"")+'</p>'+
+      (avisos.length?'<ul style="margin:8px 0 0;padding-left:18px;color:#8a6d00">'+
+        avisos.map(a=>'<li>'+esc(a)+'</li>').join("")+'</ul>':""); }
   running=false; document.querySelectorAll(".btn").forEach(b=>b.disabled=false);
   rankCtrl=null; loadState();
   if(!erro && !cancelado) setTimeout(()=>box.classList.remove("on"), 6000);

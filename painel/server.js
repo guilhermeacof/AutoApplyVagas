@@ -354,12 +354,15 @@ function eventoAmigavel(j) {
 
 // Roda o Claude transmitindo o progresso. onLog(texto) a cada passo;
 // done(resultado, erro) no final (resultado = texto da resposta).
+// Devolve o processo filho para quem chamou poder cancelá-lo (o rank em lotes roda
+// vários assistentes ao mesmo tempo e precisa matar todos ao cancelar). Em caso de
+// falha no spawn, chama done() e devolve null.
 function runClaudeStream(prompt, onLog, done) {
   let child;
   try {
     child = spawn(CLAUDE_BIN, CLAUDE_ARGS_STREAM,
       { cwd: WORKSPACE, shell: process.platform === "win32", windowsHide: true });
-  } catch (e) { return done(null, e.message); }
+  } catch (e) { done(null, e.message); return null; }
   let buf = "", err = "", resultado = null;
   try { child.stdin.write(prompt); child.stdin.end(); } catch {}
   child.stdout.on("data", (b) => {
@@ -377,6 +380,7 @@ function runClaudeStream(prompt, onLog, done) {
   child.on("error", (e) => done(null, e.message));
   child.on("close", () =>
     done(resultado, resultado ? null : (err.trim() || "o assistente não devolveu resultado")));
+  return child;
 }
 
 // Extrai o primeiro objeto JSON da resposta (bloco ```json ou { ... }).
@@ -473,6 +477,57 @@ function heurFit(title) {
   return "medium";
 }
 
+// ---------- Filtro de relevância (anti-lixo) ----------
+// Vários portais fazem busca "OU" entre as palavras do termo. Medido em 15/07/2026 na
+// SONDA: q="testes" devolve 17 vagas, mas q="analista de testes" devolve 233 — o
+// catálogo inteiro, porque "analista" casa com tudo (Fiscal, Redes, Mainframe...).
+// InfoJobs, Empregos e BNE fazem o mesmo, e por isso o radar enchia de RH, enfermagem
+// e pesquisa de cosméticos. Aspas não resolvem (a SONDA devolve vazio com aspas), então
+// o filtro é aqui: como as palavras genéricas de cargo não distinguem área nenhuma,
+// só os termos DISTINTIVOS da busca decidem se a vaga entra.
+const PALAVRAS_GENERICAS = new Set([
+  // conectivos, artigos e senioridade
+  "de", "da", "do", "dos", "das", "e", "em", "para", "com", "a", "o", "os", "as", "no",
+  "na", "the", "of", "i", "ii", "iii", "iv", "v", "jr", "sr", "pl", "junior", "juniores",
+  "pleno", "plena", "senior", "seniores", "estagio", "estagiario", "trainee", "aprendiz",
+  // cargos guarda-chuva: sozinhos casam com qualquer área
+  "analista", "analistas", "especialista", "especialistas", "engenheiro", "engenheira",
+  "consultor", "consultora", "profissional", "tecnico", "tecnica", "assistente",
+  "auxiliar", "coordenador", "coordenadora", "supervisor", "lider", "leader", "gerente",
+  "gestor", "gestora", "desenvolvedor", "desenvolvedora", "programador", "developer", "engineer",
+  "analyst", "specialist", "consultant", "officer", "assessor", "operador", "operadora",
+  // ruído de anúncio
+  "vaga", "vagas", "efetivo", "home", "office", "remoto", "remota", "hibrido",
+  "presencial", "afirmativa", "exclusiva", "pcd", "banco", "talentos", "copia",
+  "perfil", "nivel", "area",
+]);
+
+// Tokeniza (via norm: minúsculas, sem acento/pontuação) e reduz plural simples, para
+// "testes" e "teste" virarem o mesmo radical.
+function radicais(s) {
+  return norm(s).split(" ").filter(Boolean)
+    .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t));
+}
+
+// Os termos da busca que de fato identificam a área (ex.: "teste", "qa", "quality").
+function termosDistintivos(variants) {
+  const s = new Set();
+  for (const v of variants || []) {
+    for (const t of radicais(v)) if (!PALAVRAS_GENERICAS.has(t)) s.add(t);
+  }
+  return s;
+}
+
+// Relevante = o título divide ao menos um termo distintivo com a busca. Se a busca não
+// tiver nenhum termo distintivo (o usuário digitou só "Analista", por exemplo), aceita
+// tudo: melhor deixar passar do que esvaziar o radar em silêncio.
+function relevante(title, distintivos) {
+  if (!distintivos || !distintivos.size) return true;
+  const t = new Set(radicais(title));
+  for (const d of distintivos) if (t.has(d)) return true;
+  return false;
+}
+
 // Monta as consultas (portal × variante do cargo). remote: remote|hybrid|onsite|"".
 // Uma localização é "do Brasil" (ou aberta ao Brasil)? Usada para filtrar os portais
 // internacionais quando o usuário escolhe "Só Brasil". Localização vazia → mantém
@@ -549,8 +604,13 @@ function mergeIntoSeen(collected) {
 function runSearch(cargo, remote, soBrasil, res) {
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" });
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  let cancelled = false, curChild = null;
-  res.on("close", () => { cancelled = true; if (curChild) { try { curChild.kill(); } catch {} } });
+  let cancelled = false;
+  const filhos = new Set();   // processos de busca vivos (agora são vários em paralelo)
+  res.on("close", () => {
+    cancelled = true;
+    for (const c of filhos) { try { c.kill(); } catch {} }
+    filhos.clear();
+  });
 
   send("progress", { pct: 0, msg: "Preparando os termos de busca para “" + cargo + "”…" });
 
@@ -575,44 +635,80 @@ function runSearch(cargo, remote, soBrasil, res) {
     if (!variants.length) variants = [cargo]; // fallback
     variants = variants.slice(0, 6);
 
+    // Termos que identificam a área; usados para barrar o lixo que a busca "OU" dos
+    // portais devolve (ver PALAVRAS_GENERICAS). Inclui o que o usuário digitou.
+    const distintivos = termosDistintivos([cargo, ...variants]);
+
     const tasks = buildSearchTasks(variants, remote);
     const total = tasks.length;
     const collected = {};
-    let i = 0;
+    const nks = new Set();          // chaves empresa|vaga já vistas (dedup)
+    let feito = 0, foraDoTema = 0, foraDoBrasil = 0;
 
-    const next = () => {
-      if (cancelled) { send("cancelado", {}); return res.end(); }
-      if (i >= total) {
-        send("progress", { pct: 99, feito: total, total, msg: "Consolidando e removendo repetidas…" });
-        const novas = mergeIntoSeen(collected);
-        send("fim", { pct: 100, novas, msg: "Busca concluída: " + novas + " vaga(s) nova(s) encontrada(s)." });
-        return res.end();
+    const consumir = (t, out2) => {
+      let r;
+      try { r = JSON.parse(out2); } catch { return; }
+      for (const j of r.results || []) {
+        if (!j.url) continue;
+        // "Só Brasil": descarta vagas de fora vindas dos portais internacionais.
+        if (soBrasil && t.intl && !isBrLocation(j.location)) { foraDoBrasil++; continue; }
+        // Anti-lixo: o portal devolveu algo que não tem nada a ver com o cargo buscado.
+        if (!relevante(j.title, distintivos)) { foraDoTema++; continue; }
+        const nk = norm(j.company) + "|" + norm(j.title);
+        if (nks.has(nk)) continue;
+        nks.add(nk);
+        collected[j.url] = { _nk: nk, title: j.title, company: j.company, url: j.url,
+          portal: t.portal, location: j.location || null, date: (j.date || "").slice(0, 10) || null, deadline: j.deadline || null };
       }
-      const t = tasks[i];
-      const pct = Math.round((i / total) * 100);
-      send("progress", { pct, feito: i, total, msg: 'Buscando "' + t.term + '" na ' + t.label + " — " + (i + 1) + "/" + total + " (" + pct + "%)" });
-      let out2 = "";
-      try { curChild = spawn(BUN_BIN, t.args, { cwd: WORKSPACE }); }
-      catch { i++; return next(); }
-      curChild.stdout.on("data", (b) => (out2 += b.toString()));
-      curChild.on("error", () => { i++; next(); });
-      curChild.on("close", () => {
-        try {
-          const r = JSON.parse(out2);
-          for (const j of r.results || []) {
-            if (!j.url) continue;
-            // "Só Brasil": descarta vagas de fora vindas dos portais internacionais.
-            if (soBrasil && t.intl && !isBrLocation(j.location)) continue;
-            const nk = norm(j.company) + "|" + norm(j.title);
-            if (Object.values(collected).some((c) => c._nk === nk)) continue;
-            collected[j.url] = { _nk: nk, title: j.title, company: j.company, url: j.url,
-              portal: t.portal, location: j.location || null, date: (j.date || "").slice(0, 10) || null, deadline: j.deadline || null };
-          }
-        } catch {}
-        i++; next();
-      });
     };
-    next();
+
+    // Cada tarefa é um processo bun independente batendo num portal diferente, então
+    // rodar em paralelo é seguro (nada compartilhado) e é o que torna a busca rápida:
+    // antes eram ~30 buscas em fila indiana.
+    const rodar = (t) => new Promise((resolve) => {
+      let ch, out2 = "";
+      try { ch = spawn(BUN_BIN, t.args, { cwd: WORKSPACE }); }
+      catch { return resolve(); }
+      filhos.add(ch);
+      ch.stdout.on("data", (b) => (out2 += b.toString()));
+      const encerrar = (usar) => {
+        filhos.delete(ch);
+        if (usar) consumir(t, out2);
+        feito++;
+        const pct = Math.round((feito / total) * 90);   // 90-100% fica para a consolidação
+        send("progress", { pct, feito, total,
+          msg: "Buscando em " + total + " frentes ao mesmo tempo — " + feito + "/" + total +
+               " concluídas (última: " + t.label + ")" });
+        resolve();
+      };
+      ch.on("error", () => encerrar(false));
+      ch.on("close", () => encerrar(true));
+    });
+
+    let prox = 0;
+    const trabalhador = async () => {
+      while (!cancelled) {
+        const k = prox++;
+        if (k >= total) return;
+        await rodar(tasks[k]);
+      }
+    };
+    const CONCORRENCIA = 6;   // 6 portais ao mesmo tempo: rápido sem parecer um ataque
+    send("progress", { pct: 5, feito: 0, total,
+      msg: "Disparando " + total + " buscas (" + CONCORRENCIA + " ao mesmo tempo)…" });
+
+    Promise.all(Array.from({ length: Math.min(CONCORRENCIA, total) }, trabalhador)).then(() => {
+      if (cancelled) { send("cancelado", {}); return res.end(); }
+      send("progress", { pct: 95, feito: total, total, msg: "Consolidando e removendo repetidas…" });
+      const novas = mergeIntoSeen(collected);
+      const descartes = [];
+      if (foraDoTema) descartes.push(foraDoTema + " fora do tema");
+      if (foraDoBrasil) descartes.push(foraDoBrasil + " fora do Brasil");
+      send("fim", { pct: 100, novas, foraDoTema, foraDoBrasil,
+        msg: "Busca concluída: " + novas + " vaga(s) nova(s)" +
+             (descartes.length ? " (descartadas: " + descartes.join(", ") + ")" : "") + "." });
+      res.end();
+    });
   });
 }
 
@@ -830,7 +926,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
     const linha = (o) => { try { res.write(JSON.stringify(o) + "\n"); } catch {} };
     let cancelado = false;
-    res.on("close", () => { cancelado = true; });
+    const filhos = new Set();   // assistentes vivos (vários, agora que roda em paralelo)
+    res.on("close", () => {
+      cancelado = true;
+      for (const c of filhos) { try { c.kill(); } catch {} }
+      filhos.clear();
+    });
 
     const file = path.join(WORKSPACE, "job_scraper", "seen_jobs.json");
     // Fila = mesma regra do painel: sem nota, e que não foi descartada/expirada antes.
@@ -846,18 +947,51 @@ const server = http.createServer((req, res) => {
     if (fila === null) { linha({ erro: "não consegui ler as vagas (job_scraper/seen_jobs.json)" }); return res.end(); }
     if (!fila.length) { linha({ fim: { avaliadas: 0, restantes: 0, msg: "Nenhuma vaga na fila — todas já foram avaliadas." } }); return res.end(); }
 
-    const TAM = 20;
+    // Lotes menores que antes (10 em vez de 20) porque agora rodam em paralelo: mais
+    // lotes = progresso mais granular, e um lote que falha derruba menos vagas junto.
+    const TAM = 10;
+    const CONCORRENCIA = 4;   // 4 assistentes ao mesmo tempo
     const lotes = [];
     for (let i = 0; i < fila.length; i += TAM) lotes.push(fila.slice(i, i + TAM));
     const hoje = new Date().toISOString().slice(0, 10);
 
-    const proximo = (i) => {
-      if (cancelado) { linha({ cancelado: true }); return res.end(); }
-      if (i >= lotes.length) return finalizar();
+    // Quem grava é o SERVIDOR, não o assistente. Isso é o que torna o paralelo seguro:
+    // se 4 assistentes editassem o seen_jobs.json ao mesmo tempo, um sobrescreveria o
+    // outro (ler-alterar-gravar concorrente) e notas seriam perdidas em silêncio. Aqui
+    // a gravação é síncrona e roda na thread única do Node, então os lotes se enfileiram
+    // naturalmente. De quebra, acaba o problema do assistente alegar "avaliei 20" sem
+    // ter gravado nada: só conta o que passou por esta função.
+    const aplicar = (resultados) => {
+      let d;
+      try { d = JSON.parse(fs.readFileSync(file, "utf8")); } catch { return 0; }
+      const seen = d.seen || {};
+      let n = 0;
+      for (const r of resultados || []) {
+        const e = seen[r && r.url];
+        if (!e) continue;                       // URL inventada ou fora da fila: ignora
+        if (r.expired) {
+          e.status = "expired";
+          if (r.notes) e.rank_notes = String(r.notes);
+          n++; continue;
+        }
+        const nota = Number(r.score);
+        if (!isFinite(nota)) continue;          // sem nota utilizável: fica na fila
+        e.status = "ranked";
+        e.rank_score = Math.max(0, Math.min(100, Math.round(nota)));
+        e.rank_verdict = r.verdict ? String(r.verdict) : null;
+        e.rank_date = hoje;
+        e.rank_location = /^(PASS|FAIL|FLAG)$/.test(r.location) ? r.location : null;
+        e.rank_notes = r.notes ? String(r.notes) : null;
+        n++;
+      }
+      try { fs.writeFileSync(file, JSON.stringify(d, null, 2)); } catch { return 0; }
+      return n;
+    };
+
+    let gravadas = 0, feitos = 0, falhas = 0;
+
+    const rodarLote = (i) => new Promise((resolve) => {
       const lote = lotes[i];
-      const pct = Math.round((i / lotes.length) * 100);
-      linha({ lote: { atual: i + 1, total: lotes.length, pct,
-        msg: "Lote " + (i + 1) + "/" + lotes.length + " — avaliando " + lote.length + " vaga(s)… (" + fila.length + " na fila)" } });
       const lista = lote.map((j, k) => (k + 1) + ". " + (j.title || "") + " — " + (j.company || "") + " — " + j.url).join("\n");
       const prompt =
         'Avalie estas vagas contra o meu perfil, seguindo EXATAMENTE os critérios do /rank ' +
@@ -865,32 +999,66 @@ const server = http.createServer((req, res) => {
         'além de CLAUDE.md e 01-candidate-profile.md): pesos Técnico 30%, Experiência 25%, ' +
         'Comportamental 15%, Alinhamento de carreira 30%; bandas Strong Fit 75+, Good Fit 60-74, ' +
         'Moderate Fit 45-59, Weak Fit 30-44, Poor Fit <30; veto de localização.\n\nVagas:\n' + lista + '\n\n' +
-        'Para CADA vaga acima, atualize a entrada dela (pela URL) em job_scraper/seen_jobs.json com: ' +
-        '"status": "ranked", "rank_score": <0-100>, "rank_verdict": "<banda>", "rank_date": "' + hoje + '", ' +
-        '"rank_location": "PASS"|"FAIL"|"FLAG", "rank_notes": "<o que falta, curto>". ' +
-        'Vaga morta ou com prazo vencido: "status": "expired". NÃO altere o job_search_tracker.csv. ' +
-        'Não invente nada; seja honesto na nota.\n' +
-        'Responda ESTRITAMENTE com UM bloco JSON, sem texto fora dele: {"avaliadas": <n>, "resumo": "<uma frase>"}';
-      runClaudeStream(prompt, (t) => linha({ log: t }), (out, err) => {
-        if (cancelado) { linha({ cancelado: true }); return res.end(); }
+        'Busque o anúncio de cada URL e pontue SOMENTE pelo conteúdo que conseguir ler. ' +
+        'Nunca pontue pelo título e nunca invente conteúdo: se o anúncio não puder ser lido ' +
+        'ou estiver encerrado, marque "expired": true e explique em "notes". ' +
+        'NÃO edite arquivo nenhum — quem grava é o painel. Seja honesto na nota.\n' +
+        'Responda ESTRITAMENTE com UM bloco JSON, sem texto fora dele: ' +
+        '{"resultados":[{"url":"<a URL exata da lista>","score":<0-100>,"verdict":"<banda>",' +
+        '"location":"PASS"|"FAIL"|"FLAG","notes":"<o que falta, curto>","expired":false}]}';
+      let ch = null;
+      ch = runClaudeStream(prompt, (t) => linha({ log: "Lote " + (i + 1) + ": " + t }), (out, err) => {
+        if (ch) filhos.delete(ch);
+        if (cancelado) return resolve();
         if (err) {
-          linha({ erro: "falha no lote " + (i + 1) + "/" + lotes.length, detalhe: String(err).slice(-1500) });
-          return finalizar();
+          falhas++;
+          linha({ aviso: "o lote " + (i + 1) + "/" + lotes.length + " falhou; as vagas dele seguem na fila",
+            detalhe: String(err).slice(-600) });
+          return resolve();
         }
-        proximo(i + 1);
+        const j = extractJson(out);
+        const n = aplicar(j && j.resultados);
+        gravadas += n;
+        if (!n) {
+          falhas++;
+          linha({ aviso: "o lote " + (i + 1) + "/" + lotes.length + " não devolveu nota utilizável; as vagas dele seguem na fila" });
+        }
+        resolve();
       });
+      if (ch) filhos.add(ch);
+    });
+
+    let prox = 0;
+    const trabalhador = async () => {
+      while (!cancelado) {
+        const i = prox++;
+        if (i >= lotes.length) return;
+        linha({ lote: { atual: feitos, total: lotes.length, pct: Math.round((feitos / lotes.length) * 100),
+          msg: "Lote " + (i + 1) + "/" + lotes.length + " iniciado — " + lotes[i].length + " vaga(s)" } });
+        await rodarLote(i);
+        feitos++;
+        linha({ lote: { atual: feitos, total: lotes.length, pct: Math.round((feitos / lotes.length) * 100),
+          msg: feitos + "/" + lotes.length + " lotes concluídos — " + gravadas + " vaga(s) avaliada(s)" } });
+      }
     };
     // A verdade vem do arquivo, não da contagem que o Claude diz ter feito.
     const finalizar = () => {
+      if (cancelado) { linha({ cancelado: true }); return res.end(); }
       const resta = pendentes();
       const restantes = resta === null ? null : resta.length;
       const avaliadas = restantes == null ? null : fila.length - restantes;
-      linha({ fim: { avaliadas, restantes,
+      const aviso = falhas ? " (" + falhas + " lote(s) falharam)" : "";
+      linha({ fim: { avaliadas, restantes, falhas,
         msg: restantes === 0 ? "Fila zerada: todas as " + fila.length + " vagas foram avaliadas."
-          : "Avaliadas " + avaliadas + " de " + fila.length + ". Ainda faltam " + restantes + "." } });
+          : "Avaliadas " + avaliadas + " de " + fila.length + ". Ainda faltam " + restantes + "." + aviso } });
       res.end();
     };
-    proximo(0);
+
+    linha({ lote: { atual: 0, total: lotes.length, pct: 0,
+      msg: fila.length + " vaga(s) na fila — " + lotes.length + " lote(s), " +
+           Math.min(CONCORRENCIA, lotes.length) + " rodando ao mesmo tempo" } });
+    Promise.all(Array.from({ length: Math.min(CONCORRENCIA, lotes.length) }, trabalhador))
+      .then(finalizar);
     return;
   }
 

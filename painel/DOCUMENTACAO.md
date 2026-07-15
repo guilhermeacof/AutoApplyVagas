@@ -125,6 +125,47 @@ e reaproveitado como está. Ao **preparar candidatura**, o painel instrui o assi
 
 ## Changelog
 
+### 2026-07-15 — filtro anti-lixo na busca + tudo em PARALELO
+**1) Anti-lixo.** O radar enchia de vaga de RH, técnico de enfermagem, pesquisador de
+cosméticos e analista contábil. A causa: vários portais fazem busca **"OU"** entre as
+palavras do termo. Medido na SONDA em 15/07/2026: `q="testes"` → 17 vagas, mas
+`q="analista de testes"` → **233** (o catálogo inteiro), porque "analista" casa com tudo.
+Aspas não resolvem (a SONDA devolve vazio). O conserto é no painel, em `relevante()`:
+como as palavras genéricas de cargo (analista, especialista, engenheiro, sênior…) não
+distinguem área nenhuma, só os **termos distintivos** da busca (teste, qa, quality,
+qualidade, automação…) decidem se a vaga entra. Sem termo distintivo (o usuário digitou
+só "Analista"), aceita tudo — melhor passar lixo do que esvaziar o radar em silêncio.
+- Medido em portal real: de 38 vagas devolvidas, **28 barradas (74%)**. Na SONDA, 19 de 20.
+- Busca real ponta a ponta: 72 vagas novas, **68 barradas como fora do tema**; 70 das 72
+  têm cara de QA no título.
+- **Limite conhecido e honesto:** o filtro só lê o título. Passam "Analista de Testes
+  Automotivos" (hardware) e "Gestor de Pessoas – Área de Software" (RH), porque o título
+  é indistinguível do equivalente em software. Quem barra esses é o ranqueamento, que lê
+  o anúncio. Um blocklist por área foi descartado: quebraria a busca de quem procura
+  justamente QA automotivo.
+- O painel agora informa quantas foram descartadas e por quê ("descartadas: 68 fora do
+  tema, 30 fora do Brasil") em vez de sumir com elas caladamente.
+
+**2) Paralelismo.** Antes tudo rodava em fila indiana.
+- **Busca:** as ~34 consultas (portal × variação do cargo) rodam **6 ao mesmo tempo**.
+  Medido: **19 s** contra vários minutos antes. São processos `bun` independentes batendo
+  em portais diferentes, então não há nada compartilhado para dar corrida.
+- **Avaliação:** lotes de 10 (era 20), **4 assistentes ao mesmo tempo**. Medido com
+  assistente simulado: 4 lotes em **1,47 s** contra ~4,8 s sequencial, com sobreposição
+  temporal comprovada (todos começam antes do primeiro terminar).
+- **Por que o paralelo é seguro:** o prompt do rank **não edita mais o `seen_jobs.json`** —
+  ele devolve JSON e **quem grava é o servidor**. Se 4 assistentes editassem o arquivo
+  juntos, um sobrescreveria o outro (ler-alterar-gravar concorrente) e notas sumiriam em
+  silêncio. A gravação é síncrona na thread única do Node, então os lotes se enfileiram
+  sozinhos. De quebra, acabou o problema do assistente alegar "avaliei 20" sem ter gravado
+  nada: **só conta o que passou pela função de gravação**.
+- Testado: assistente simulado que respondeu `{"avaliadas":10,"resumo":"avaliei tudo!"}`
+  sem resultado nenhum → o painel reportou "Avaliadas 0 de 12. Ainda faltam 12.
+  (2 lote(s) falharam)" e **manteve as vagas na fila**.
+- Lote que falha agora emite `aviso` e o painel lista os avisos no fim, em vez de descartar.
+- `runClaudeStream` passou a devolver o processo filho, para o cancelamento matar todos os
+  assistentes/buscas em voo (antes só existia um).
+
 ### 2026-07-15 — contadores honestos + avaliação em LOTES (fila não fica para trás)
 Investigação de "achei 208 vagas mas só 97 foram avaliadas". A conta real era:
 **97 recomendadas + 36 avaliadas-mas-vetadas + 75 nunca avaliadas = 208**. Dois bugs:
