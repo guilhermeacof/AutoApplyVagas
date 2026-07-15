@@ -244,6 +244,14 @@ tr.preparada td:first-child{box-shadow:inset 3px 0 0 #c88c00}
 .spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}}
+/* Lista de vagas preparadas, com o "e agora?" ao lado de cada uma. */
+.preplist{list-style:none;margin:10px 0 0;padding:0}
+.prepitem{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:8px 0;border-top:1px solid var(--line)}
+.prepnome{font-size:13.5px;font-weight:600}
+.prepnome span{font-weight:400;color:var(--ink-2)}
+.prepacoes{display:flex;gap:14px;flex-shrink:0}
+.prephint{color:var(--ink-2);font-size:12.5px}
 .mresult{margin:14px 0;border-radius:12px;padding:16px;background:var(--accent-soft);border:1px solid var(--line)}
 .mresult .rscore{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
 .mresult .rscore .arrow{color:var(--ink-2);margin:0 8px;font-size:20px}
@@ -1087,6 +1095,7 @@ $("#bulkAddReval").addEventListener("click", async ()=>{
 // Cada vaga roda no seu próprio assistente, então 5 selecionadas = 5 em paralelo.
 // UMA vaga (fluxo avulso) é só uma lista de uma — mesmo caminho, mesmo endpoint.
 let applyCtrl=null;
+let PREP=[];   // vagas preparadas na última rodada (para os botões do resultado)
 async function prepararCandidaturas(jobs){
   if(running || !jobs || !jobs.length) return;
   running=true; document.querySelectorAll(".btn").forEach(b=>b.disabled=true);
@@ -1123,11 +1132,19 @@ async function prepararCandidaturas(jobs){
   else if(fim){
     $("#aPct").textContent="100%"; $("#aFill").style.width="100%";
     $("#aMsg").textContent=fim.msg||"Concluído.";
-    const lista=(fim.detalhes||[]).map(d=>'<li>'+esc(d.nome)+' — '+d.campos+' resposta(s) prontas</li>').join("");
+    // Cada vaga preparada vira uma linha com o que fazer A SEGUIR. Antes isto era só
+    // um texto ("abra cada vaga e clique em…") e a pessoa ficava sem saída: tinha de
+    // caçar a vaga na lista, que podia nem estar visível no filtro atual.
+    PREP=(fim.detalhes||[]).filter(d=>d.url);
+    const lista=PREP.map((d,i)=>
+      '<li class="prepitem"><div class="prepnome">'+esc(d.nome)+' <span>'+d.campos+' resposta(s) prontas</span></div>'+
+      '<div class="prepacoes"><button class="linkbtn" data-prep="'+i+'">📋 Ver respostas</button>'+
+      '<button class="linkbtn" data-prepsite="'+i+'">🔗 Abrir a vaga no site</button></div></li>').join("");
     $("#aResult").hidden=false;
     $("#aResult").innerHTML='<p style="margin:0">✓ '+esc(fim.msg||"")+'</p>'+
-      (lista?'<ul style="margin:8px 0 0;padding-left:18px">'+lista+'</ul>':"")+
-      (fim.preparadas?'<p style="margin:8px 0 0">Abra cada vaga e clique em <b>Respostas do formulário</b> para copiar e colar no portal.</p>':"")+
+      (lista?'<ul class="preplist">'+lista+'</ul>':"")+
+      (PREP.length?'<p style="margin:8px 0 0" class="prephint">Abra as respostas, copie e cole no formulário do site. '+
+        'Com a extensão instalada, o botão verde na página da vaga preenche sozinho. <b>O envio é seu.</b></p>':"")+
       (avisos.length?'<ul style="margin:8px 0 0;padding-left:18px;color:#8a6d00">'+
         avisos.map(a=>'<li>'+esc(a)+'</li>').join("")+'</ul>':"");
   }
@@ -1139,6 +1156,13 @@ async function prepararCandidaturas(jobs){
 // botões de nome parecido faziam coisas diferentes.
 $("#bulkApply").addEventListener("click", ()=>prepararCandidaturas(jobsSelecionadas()));
 $("#aCancel").addEventListener("click",()=>{ if(applyCtrl) applyCtrl.abort(); });
+// Continuar a candidatura direto do resultado: ver as respostas ou ir para o site.
+$("#aResult").addEventListener("click",(e)=>{
+  const ver=e.target.closest("[data-prep]");
+  if(ver){ const d=PREP[+ver.dataset.prep]; if(d) openAnswers({url:d.url,title:d.title,company:d.company}); return; }
+  const site=e.target.closest("[data-prepsite]");
+  if(site){ const d=PREP[+site.dataset.prepsite]; if(d) window.open(d.url,"_blank","noopener"); }
+});
 
 // ================= Meu currículo (único) =================
 function baixarArquivo(url){ const a=document.createElement("a"); a.href=url; a.download=""; document.body.appendChild(a); a.click(); a.remove(); }

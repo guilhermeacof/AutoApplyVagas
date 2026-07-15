@@ -1405,7 +1405,10 @@ const server = http.createServer((req, res) => {
             return resolve();
           }
           preparadas++;
-          detalhes.push({ nome, campos: n });
+          // url/title/company vão junto para o painel poder levar direto às respostas
+          // e à vaga no site. Sem isso a pessoa termina aqui sem saber como continuar.
+          detalhes.push({ nome, campos: n, url: job.url,
+            title: String(j.vaga || job.title || ""), company: String(j.empresa || job.company || "") });
           resolve();
         });
         if (ch) filhos.add(ch);
