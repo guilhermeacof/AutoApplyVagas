@@ -525,6 +525,8 @@ tr.preparada td:first-child{box-shadow:inset 3px 0 0 #c88c00}
           <button class="btn" id="mAnswers"><span class="ico">📝</span><span>Respostas do formulário</span></button>
           <button class="btn" id="mApply"><span class="ico">✍️</span><span>Preparar candidatura</span></button>
           <button class="btn" id="mSite"><span class="ico">🌐</span><span>Ver no site</span></button>
+          <!-- Só o usuário sabe que enviou: o painel não observa o site da empresa. -->
+          <button class="btn" id="mEnviei"><span class="ico">✅</span><span>Já me candidatei</span></button>
         </div>
       </div>
     </div>
@@ -749,6 +751,11 @@ function openDetail(j){
     : j.preparada
     ? '<div class="prep-warn">📋 Os documentos/respostas desta vaga estão prontos, mas ela <b>ainda não foi enviada</b> — abra o link da vaga e envie no portal.</div>'
     : "";
+  // O botão alterna: marcar e desmarcar. Um clique errado marcaria como enviada uma
+  // vaga que você nunca mandou, e ela sumiria da sua fila — tem de dar para voltar.
+  $("#mEnviei").querySelector("span:last-child").textContent =
+    j.aplicada ? "Não me candidatei (desfazer)" : "Já me candidatei";
+  $("#mEnviei").querySelector(".ico").textContent = j.aplicada ? "↩" : "✅";
   $("#overlay").classList.add("on");
 }
 function closeDetail(){ $("#overlay").classList.remove("on"); }
@@ -773,6 +780,26 @@ $("#mApply").addEventListener("click",()=>{
   const j={url:CURRENT.url,title:CURRENT.title,company:CURRENT.company};
   closeDetail();
   prepararCandidaturas([j]);   // quem já se candidatou é barrado pelo servidor, com aviso
+});
+// "Já me candidatei" — o painel não observa o site da empresa, então é você quem conta
+// a ele que enviou. É o único caminho de uma vaga virar "✓ já inscrito".
+$("#mEnviei").addEventListener("click", async ()=>{
+  if(!CURRENT) return;
+  const virar = !CURRENT.aplicada;
+  const b=$("#mEnviei"); b.disabled=true;
+  try{
+    const r = await (await fetch("/api/applied",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:CURRENT.url,title:CURRENT.title,company:CURRENT.company,aplicada:virar})})).json();
+    if(r.erro){ alert("Não consegui marcar: "+r.erro); return; }
+    CURRENT.aplicada = virar; CURRENT.preparada = virar ? false : CURRENT.preparada;
+    $("#mApplied").innerHTML = virar
+      ? '<div class="applied-warn">✓ Você já se candidatou a esta vaga.</div>'
+      : '<div class="prep-warn">📋 Marquei como <b>não enviada</b> — ela volta para a sua fila.</div>';
+    b.querySelector("span:last-child").textContent = virar ? "Não me candidatei (desfazer)" : "Já me candidatei";
+    b.querySelector(".ico").textContent = virar ? "↩" : "✅";
+    loadState();
+  }catch(e){ alert("Falhou: "+e.message); }
+  finally{ b.disabled=false; }
 });
 // ---------- Respostas do formulário (campos da Gupy etc.) ----------
 let ANS_JOB=null; // vaga atual do modal de respostas (null = editando os valores padrão)

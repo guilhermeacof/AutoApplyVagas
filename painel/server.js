@@ -208,6 +208,35 @@ function appendTracker(row) {
   fs.appendFileSync(file, prefixo + TRACKER_HEADER.map((h) => csvCell(row[h])).join(",") + "\n");
 }
 
+// Vira o status de UMA vaga no tracker entre "prepared" e "applied". Só o usuário sabe
+// que enviou no portal — o painel não observa o site da empresa — então isto só roda a
+// mando dele, pelo botão "Já me candidatei".
+//
+// Reescreve só a LINHA dela, preservando o resto do arquivo byte a byte: o tracker tem
+// candidaturas antigas anotadas à mão e reserializar tudo poderia mexer no que não devo.
+function marcarNoTracker(url, aplicada) {
+  const file = path.join(WORKSPACE, "job_search_tracker.csv");
+  let raw;
+  try { raw = fs.readFileSync(file, "utf8"); } catch { return { erro: "não achei o tracker" }; }
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const linhas = raw.split(/\r?\n/);
+  const header = parseCsvLine(linhas[0] || "");
+  const iStatus = header.indexOf("status"), iSource = header.indexOf("source"), iDate = header.indexOf("date");
+  if (iStatus < 0 || iSource < 0) return { erro: "o tracker não tem as colunas status/source" };
+  const alvo = String(url || "").trim();
+  for (let i = 1; i < linhas.length; i++) {
+    if (!linhas[i].trim()) continue;
+    const c = parseCsvLine(linhas[i]);
+    if ((c[iSource] || "").trim() !== alvo) continue;
+    c[iStatus] = aplicada ? "applied" : "prepared";
+    if (aplicada && iDate >= 0) c[iDate] = new Date().toISOString().slice(0, 10);   // data do envio
+    linhas[i] = c.map(csvCell).join(",");
+    try { fs.writeFileSync(file, linhas.join(eol)); } catch (e) { return { erro: e.message }; }
+    return { ok: true, criou: false };
+  }
+  return { naoAchou: true };
+}
+
 // Todas as vagas do radar (menos descartadas/expiradas), com nota, gaps e flags.
 function readAllJobs() {
   const file = path.join(WORKSPACE, "job_scraper", "seen_jobs.json");
@@ -968,6 +997,46 @@ const server = http.createServer((req, res) => {
     const campos = v && Array.isArray(v.campos) && v.campos.length ? v.campos : store.padrao;
     return res.end(JSON.stringify({ global: false, campos, atualizadoEm: v && v.atualizadoEm || null }));
   }
+  // POST /api/applied  {url, title?, company?, aplicada:true|false}
+  // O usuário dizendo "enviei" (ou desfazendo). É o ÚNICO jeito de uma vaga virar
+  // "já inscrito": o painel prepara, mas quem envia é a pessoa, no site da empresa —
+  // e ele não tem como saber que isso aconteceu.
+  if (u.pathname === "/api/applied" && req.method === "POST") {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch {}
+      const url = String(body.url || "").trim();
+      if (!url) return res.end(JSON.stringify({ erro: "sem url" }));
+      const aplicada = body.aplicada !== false;
+      const r = marcarNoTracker(url, aplicada);
+      if (r.erro) return res.end(JSON.stringify({ erro: r.erro }));
+      if (r.ok) return res.end(JSON.stringify({ ok: true, aplicada }));
+      // Sem linha no tracker: candidatou-se sem ter preparado pelo painel. Cria a linha
+      // para a vaga não voltar a aparecer como pendente. Desmarcar aqui não faz nada.
+      if (!aplicada) return res.end(JSON.stringify({ ok: true, aplicada: false }));
+      const hoje = new Date().toISOString().slice(0, 10);
+      let nota = "";
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(WORKSPACE, "job_scraper", "seen_jobs.json"), "utf8"));
+        const e = (d.seen || {})[url];
+        if (e && e.rank_score != null) nota = e.rank_score;
+      } catch { /* sem radar: fit_rating fica vazio */ }
+      try {
+        appendTracker({
+          date: hoje, company: String(body.company || ""), sector: "", role: String(body.title || ""),
+          role_type: "", channel: "", status: "applied", contact_person: "", fit_rating: nota,
+          notes: hoje + ": candidatura enviada por mim no site (marcada no painel)",
+          cv_file: "cv/main_example.tex", cover_letter_file: "", source: url,
+        });
+      } catch (e) { return res.end(JSON.stringify({ erro: e.message })); }
+      return res.end(JSON.stringify({ ok: true, aplicada: true, criou: true }));
+    });
+    return;
+  }
+
   // GET /api/answers/list → vagas que têm respostas salvas. É o que a extensão mostra
   // quando não reconhece a página, para a pessoa escolher a vaga na mão.
   if (u.pathname === "/api/answers/list" && req.method === "GET") {
