@@ -151,6 +151,31 @@ function readTracker() {
   });
 }
 
+// Colunas do tracker, na ordem exata do arquivo. Escrever por esta lista (em vez de
+// pelo cabeçalho lido) mantém a ordem estável mesmo se o arquivo ainda não existir.
+const TRACKER_HEADER = ["date", "company", "sector", "role", "role_type", "channel", "status",
+  "contact_person", "fit_rating", "notes", "cv_file", "cover_letter_file", "source"];
+
+function csvCell(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// Acrescenta uma candidatura ao tracker. Síncrono de propósito: na thread única do
+// Node, várias candidaturas em paralelo se enfileiram aqui em vez de sobrescrever
+// umas às outras (mesma razão do rank em lotes gravar pelo servidor, não pelo agente).
+function appendTracker(row) {
+  const file = path.join(WORKSPACE, "job_search_tracker.csv");
+  let prefixo = "";
+  try {
+    const atual = fs.readFileSync(file, "utf8");
+    if (atual.length && !/\n$/.test(atual)) prefixo = "\n";   // arquivo sem quebra no fim
+  } catch {
+    prefixo = TRACKER_HEADER.join(",") + "\n";                // primeiro registro: escreve o cabeçalho
+  }
+  fs.appendFileSync(file, prefixo + TRACKER_HEADER.map((h) => csvCell(row[h])).join(",") + "\n");
+}
+
 // Todas as vagas do radar (menos descartadas/expiradas), com nota, gaps e flags.
 function readAllJobs() {
   const file = path.join(WORKSPACE, "job_scraper", "seen_jobs.json");
@@ -1174,6 +1199,175 @@ const server = http.createServer((req, res) => {
         if (!j) { linha({ erro: "não consegui confirmar o resultado", detalhe: String(out || "").slice(-1500) }); return res.end(); }
         linha({ fim: j }); res.end();
       });
+    });
+    return;
+  }
+
+  // ----- Candidaturas em massa (uma vaga por assistente, vários ao mesmo tempo) -----
+  // Antes isto era UM único prompt com a lista inteira ("uma por uma"): o assistente
+  // escrevia uma carta para cada vaga, em série, sem progresso por vaga e sem isolar
+  // falhas. Agora cada vaga tem o seu próprio assistente, rodando em paralelo, e o
+  // trabalho é só ler o anúncio e preparar as RESPOSTAS do formulário — sem carta.
+  if (u.pathname === "/api/bulk-apply" && req.method === "POST") {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
+      const linha = (o) => { try { res.write(JSON.stringify(o) + "\n"); } catch {} };
+      let cancelado = false;
+      const filhos = new Set();
+      res.on("close", () => {
+        cancelado = true;
+        for (const c of filhos) { try { c.kill(); } catch {} }
+        filhos.clear();
+      });
+
+      let body = {};
+      try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch {}
+      const todas = (body.jobs || []).slice(0, 20);
+      if (!todas.length) { linha({ erro: "nenhuma vaga selecionada" }); return res.end(); }
+
+      // Vaga já registrada no tracker não entra de novo (evita linha duplicada se a
+      // pessoa reselecionar uma que já preparou).
+      const jaNoTracker = new Set(readTracker().map((r) => (r.source || "").trim()).filter(Boolean));
+      const jobs = [], pulados = [];
+      for (const j of todas) {
+        if (jaNoTracker.has(String(j.url || "").trim())) pulados.push(j); else jobs.push(j);
+      }
+      for (const j of pulados) linha({ aviso: "“" + (j.title || j.url) + "” já estava no tracker — não registrei de novo" });
+      if (!jobs.length) { linha({ fim: { preparadas: 0, total: todas.length, msg: "Nada a fazer: todas as vagas selecionadas já estavam registradas." } }); return res.end(); }
+
+      // Notas do radar, para preencher o fit_rating do tracker sem perguntar ao assistente.
+      const notas = {};
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(WORKSPACE, "job_scraper", "seen_jobs.json"), "utf8"));
+        for (const [url, e] of Object.entries(d.seen || {})) notas[url] = e.rank_score;
+      } catch { /* sem radar: fit_rating fica vazio */ }
+
+      const store0 = readAnswers();
+      const padraoTxt = (store0.padrao || []).map((c) => "- " + c.pergunta + ": " + (c.resposta || "(não informado)")).join("\n");
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      // Grava tudo o que uma vaga produziu. Só o SERVIDOR escreve — o assistente não
+      // toca em arquivo nenhum. Sem isso, N assistentes em paralelo se atropelariam no
+      // form_answers.json e no tracker (ler-alterar-gravar concorrente).
+      const aplicar = (job, j) => {
+        const campos = sanitizeCampos(j.campos);
+        if (!campos.length) return null;
+        const vaga = {
+          title: String(j.vaga || job.title || "").slice(0, 300),
+          company: String(j.empresa || job.company || "").slice(0, 200),
+          url: job.url,
+          campos,
+          atualizadoEm: new Date().toISOString(),
+        };
+        const store = readAnswers();          // relê: outra vaga pode ter gravado no meio
+        store.vagas[job.url] = vaga;
+        writeAnswers(store);
+        escreverSnapshotRespostas(vaga);
+        appendTracker({
+          date: hoje,
+          company: vaga.company,
+          sector: String(j.setor || ""),
+          role: vaga.title,
+          role_type: "",
+          channel: String(j.canal || ""),
+          // "prepared", nunca "applied": o painel prepara, quem envia no portal é a
+          // pessoa. Marcar como applied aqui faria o painel dar a vaga por encerrada.
+          status: "prepared",
+          contact_person: "",
+          fit_rating: notas[job.url] == null ? "" : notas[job.url],
+          notes: hoje + ": respostas preparadas pelo painel (currículo único, sem carta); FALTA ENVIAR no portal"
+            + (j.notes ? "; " + String(j.notes) : ""),
+          cv_file: "cv/main_example.tex",
+          cover_letter_file: "",
+          source: job.url,
+        });
+        return campos.length;
+      };
+
+      let preparadas = 0, feitos = 0, falhas = 0;
+      const detalhes = [];
+
+      const rodarVaga = (i) => new Promise((resolve) => {
+        const job = jobs[i];
+        const nome = (job.title || "") + (job.company ? " — " + job.company : "");
+        const prompt =
+          'Prepare a minha candidatura para esta vaga:\n' + nome + '\n' + job.url + '\n\n' +
+          'NÃO escreva carta de apresentação. NÃO gere nem altere currículo — vou com o meu currículo ' +
+          'único (cv/main_example.tex) exatamente como está. NÃO edite arquivo nenhum: quem grava é o painel.\n\n' +
+          'Sua tarefa: leia o anúncio e prepare as RESPOSTAS que o formulário de candidatura vai pedir, ' +
+          'com base no meu perfil (CLAUDE.md e .claude/skills/job-application-assistant/01-candidate-profile.md).\n' +
+          'Comece pelas minhas respostas padrão abaixo, reaproveitando os valores EXATAMENTE como estão, e ' +
+          'ACRESCENTE as perguntas específicas que ESTE anúncio faz (motivação, experiência com a stack citada, ' +
+          'disponibilidade, etc.). Cada resposta específica: primeira pessoa, no máximo 3 frases, verdadeira e ' +
+          'baseada SOMENTE no meu perfil — nunca invente competência, experiência ou número.\n\n' +
+          'Minhas respostas padrão:\n' + padraoTxt + '\n\n' +
+          'Se o anúncio não puder ser lido ou já estiver encerrado, devolva {"expired":true,"notes":"<motivo>"}.\n' +
+          'Responda ESTRITAMENTE com UM bloco JSON, sem texto fora dele: ' +
+          '{"empresa":"<nome da empresa>","vaga":"<título da vaga>","setor":"<setor/indústria>",' +
+          '"canal":"<Gupy|LinkedIn|site próprio|…>","campos":[{"pergunta":"<pergunta>","resposta":"<resposta>"}],' +
+          '"notes":"<uma frase do que preparou>","expired":false}';
+
+        let ch = null;
+        ch = runClaudeStream(prompt, (t) => linha({ log: nome + ": " + t }), (out, err) => {
+          if (ch) filhos.delete(ch);
+          if (cancelado) return resolve();
+          if (err) {
+            falhas++;
+            linha({ aviso: "“" + nome + "” falhou; não registrei nada dela", detalhe: String(err).slice(-600) });
+            return resolve();
+          }
+          const j = extractJson(out);
+          if (!j) {
+            falhas++;
+            linha({ aviso: "“" + nome + "” não devolveu resposta utilizável; não registrei nada dela" });
+            return resolve();
+          }
+          if (j.expired) {
+            falhas++;
+            linha({ aviso: "“" + nome + "” parece encerrada ou ilegível" + (j.notes ? ": " + j.notes : "") + " — não registrei" });
+            return resolve();
+          }
+          const n = aplicar(job, j);
+          if (!n) {
+            falhas++;
+            linha({ aviso: "“" + nome + "” não devolveu respostas de formulário; não registrei nada dela" });
+            return resolve();
+          }
+          preparadas++;
+          detalhes.push({ nome, campos: n });
+          resolve();
+        });
+        if (ch) filhos.add(ch);
+      });
+
+      const CONCORRENCIA = 5;   // 5 candidaturas ao mesmo tempo
+      let prox = 0;
+      const trabalhador = async () => {
+        while (!cancelado) {
+          const i = prox++;
+          if (i >= jobs.length) return;
+          await rodarVaga(i);
+          feitos++;
+          linha({ passo: { atual: feitos, total: jobs.length, pct: Math.round((feitos / jobs.length) * 100),
+            msg: feitos + "/" + jobs.length + " vaga(s) concluída(s) — " + preparadas + " preparada(s)" } });
+        }
+      };
+
+      const finalizar = () => {
+        if (cancelado) { linha({ cancelado: true }); return res.end(); }
+        const aviso = falhas ? " (" + falhas + " não deu(deram) certo)" : "";
+        linha({ fim: { preparadas, total: jobs.length, falhas, detalhes,
+          msg: preparadas
+            ? preparadas + " candidatura(s) preparada(s): respostas prontas em documents/respostas/ e registro no tracker." + aviso
+            : "Nenhuma candidatura foi preparada." + aviso } });
+        res.end();
+      };
+
+      linha({ passo: { atual: 0, total: jobs.length, pct: 0,
+        msg: jobs.length + " vaga(s) — " + Math.min(CONCORRENCIA, jobs.length) + " sendo preparada(s) ao mesmo tempo" } });
+      Promise.all(Array.from({ length: Math.min(CONCORRENCIA, jobs.length) }, trabalhador)).then(finalizar);
     });
     return;
   }

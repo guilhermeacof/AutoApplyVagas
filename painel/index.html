@@ -442,6 +442,20 @@ tr.aplicada td:first-child{box-shadow:inset 3px 0 0 var(--good)}
     <div class="mresult" id="rResult" hidden></div>
   </div>
 
+  <!-- Progresso das candidaturas em massa (uma vaga por assistente, em paralelo) -->
+  <div class="searchbox" id="applybox">
+    <div class="top">
+      <div class="st"><span class="spin"></span><span id="aMsg">Preparando…</span></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="pctlbl" id="aPct">0%</span>
+        <button class="cancelbtn" id="aCancel">Cancelar</button>
+      </div>
+    </div>
+    <div class="pbar"><i id="aFill"></i></div>
+    <div class="livelog" id="aLog" hidden></div>
+    <div class="mresult" id="aResult" hidden></div>
+  </div>
+
   <!-- Console de saída (para outras ações) -->
   <div class="console" id="console">
     <div class="bar"><span class="dot" id="dot"></span><span id="cstatus">Trabalhando…</span>
@@ -1066,19 +1080,60 @@ $("#bulkAddReval").addEventListener("click", async ()=>{
     $("#bulkResult").innerHTML='<p style="color:var(--urgent)">Falha: '+esc(e.message)+'</p>'; }
 });
 
-// ---- Preparar candidaturas em massa (reusa o console do Claude) ----
-$("#bulkApply").addEventListener("click",()=>{
+// ---- Preparar candidaturas em massa (uma vaga por assistente, todas ao mesmo tempo) ----
+// Sem carta de apresentação e sem janela de confirmação: marcou e clicou, já vai.
+// Cada vaga roda no seu próprio assistente, então 5 selecionadas = 5 em paralelo.
+let applyCtrl=null;
+async function bulkApply(){
+  if(running) return;
   const jobs=jobsSelecionadas(); if(!jobs.length) return;
-  const jaAplicadas=jobs.filter(j=>aplicadasUrls.includes(j.url)).length;
-  let aviso="Preparar os documentos de "+jobs.length+" vaga(s) selecionada(s)?\n\nUsa o seu currículo único e escreve uma carta para cada — pode levar vários minutos.";
-  if(jaAplicadas) aviso+="\n\n⚠ "+jaAplicadas+" delas você já se candidatou.";
-  if(!confirm(aviso)) return;
-  const lista=jobs.map((j,i)=>(i+1)+". "+(j.title||"")+" — "+(j.company||"")+" — "+j.url).join("\n");
-  run("Prepare a candidatura para CADA uma destas vagas, uma por uma. Para TODAS use o MEU CURRÍCULO ÚNICO "+
-      "(cv/main_example.tex) exatamente como está — NÃO gere currículos novos/direcionados nem altere o currículo. "+
-      "Para cada vaga escreva apenas uma carta de apresentação curta e específica da empresa, compile o PDF, copie o "+
-      "currículo único + a carta para a pasta da candidatura e registre no tracker. Ao final, resuma o que foi preparado.\n\nVagas:\n"+lista);
-});
+  running=true; document.querySelectorAll(".btn").forEach(b=>b.disabled=true);
+  const box=$("#applybox"); box.classList.add("on");
+  $("#aMsg").textContent="Preparando…"; $("#aPct").textContent="0%"; $("#aFill").style.width="0%";
+  $("#aResult").hidden=true; $("#aLog").hidden=false; $("#aLog").innerHTML='<span class="step">Iniciando…</span>';
+  box.scrollIntoView({behavior:"smooth",block:"center"});
+  applyCtrl=new AbortController();
+  let fim=null, erro=null, cancelado=false, avisos=[];
+  try{
+    const r=await fetch("/api/bulk-apply",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({jobs}),signal:applyCtrl.signal});
+    const reader=r.body.getReader(), dec=new TextDecoder(); let buf="";
+    for(;;){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf("\n"))>=0){
+        const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(!l) continue;
+        let o; try{ o=JSON.parse(l); }catch{ continue; }
+        if(o.passo){ $("#aMsg").textContent=o.passo.msg; $("#aPct").textContent=o.passo.pct+"%"; $("#aFill").style.width=o.passo.pct+"%"; }
+        if(o.log) $("#aLog").innerHTML='<span class="step">'+esc(o.log)+'</span>';
+        if(o.fim) fim=o.fim;
+        if(o.erro) erro=o;
+        if(o.aviso) avisos.push(o.aviso);   // vaga que não deu certo: aparece no fim
+        if(o.cancelado) cancelado=true;
+      }
+    }
+  }catch(e){ if(e.name!=="AbortError") erro={erro:"falha ao preparar: "+e.message}; else cancelado=true; }
+  $("#aLog").hidden=true;
+  if(cancelado){ $("#aMsg").textContent="Candidaturas canceladas."; $("#aPct").textContent="—"; }
+  else if(erro){ $("#aMsg").textContent="Não consegui concluir."; $("#aResult").hidden=false;
+    $("#aResult").innerHTML=erroHtml(erro,"Erro ao preparar:"); }
+  else if(fim){
+    $("#aPct").textContent="100%"; $("#aFill").style.width="100%";
+    $("#aMsg").textContent=fim.msg||"Concluído.";
+    const lista=(fim.detalhes||[]).map(d=>'<li>'+esc(d.nome)+' — '+d.campos+' resposta(s) prontas</li>').join("");
+    $("#aResult").hidden=false;
+    $("#aResult").innerHTML='<p style="margin:0">✓ '+esc(fim.msg||"")+'</p>'+
+      (lista?'<ul style="margin:8px 0 0;padding-left:18px">'+lista+'</ul>':"")+
+      (fim.preparadas?'<p style="margin:8px 0 0">Abra cada vaga e clique em <b>Respostas do formulário</b> para copiar e colar no portal.</p>':"")+
+      (avisos.length?'<ul style="margin:8px 0 0;padding-left:18px;color:#8a6d00">'+
+        avisos.map(a=>'<li>'+esc(a)+'</li>').join("")+'</ul>':"");
+  }
+  running=false; document.querySelectorAll(".btn").forEach(b=>b.disabled=false);
+  applyCtrl=null; loadState();
+}
+$("#bulkApply").addEventListener("click", bulkApply);
+$("#aCancel").addEventListener("click",()=>{ if(applyCtrl) applyCtrl.abort(); });
 
 // ================= Meu currículo (único) =================
 function baixarArquivo(url){ const a=document.createElement("a"); a.href=url; a.download=""; document.body.appendChild(a); a.click(); a.remove(); }
