@@ -27,7 +27,8 @@ header .kicker{font-size:12px;letter-spacing:.09em;text-transform:uppercase;colo
 header h1{font-size:27px;margin:4px 0 2px;letter-spacing:-.02em}
 header p{margin:0;color:var(--ink-2)}
 
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0}
+.card .csub{display:block;margin-top:4px;font-size:11.5px;color:var(--ink-2);opacity:.9;line-height:1.35}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow)}
 .card b{display:block;font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .card span{font-size:12.5px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
@@ -308,10 +309,10 @@ tr.aplicada td:first-child{box-shadow:inset 3px 0 0 var(--good)}
           <span>Buscar novas vagas
             <small>Procura vagas do seu cargo, remotas, e traz as novidades</small></span>
         </button>
-        <button class="btn" data-prompt="Execute a triagem (/rank) das vagas novas e me mostre a lista ordenada por adequação ao meu perfil, em português.">
+        <button class="btn" id="rankBtn">
           <span class="ico">⭐</span>
           <span>Avaliar e ranquear as vagas
-            <small>Dá uma nota de 0 a 100 para cada vaga nova encontrada</small></span>
+            <small>Dá nota de 0 a 100 a cada vaga da fila — em lotes, até zerar</small></span>
         </button>
         <button class="btn" data-prompt="Liste minhas candidaturas registradas e o status atual de cada uma, em português.">
           <span class="ico">📋</span>
@@ -398,6 +399,20 @@ tr.aplicada td:first-child{box-shadow:inset 3px 0 0 var(--good)}
       </div>
     </div>
     <div class="pbar"><i id="sFill"></i></div>
+  </div>
+
+  <!-- Progresso da avaliação em lotes (Avaliar e ranquear) -->
+  <div class="searchbox" id="rankbox">
+    <div class="top">
+      <div class="st"><span class="spin"></span><span id="rMsg">Preparando…</span></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="pctlbl" id="rPct">0%</span>
+        <button class="cancelbtn" id="rCancel">Cancelar</button>
+      </div>
+    </div>
+    <div class="pbar"><i id="rFill"></i></div>
+    <div class="livelog" id="rLog" hidden></div>
+    <div class="mresult" id="rResult" hidden></div>
   </div>
 
   <!-- Console de saída (para outras ações) -->
@@ -536,7 +551,8 @@ async function loadState(){
     const r = s.resumo;
     $("#cards").innerHTML =
       card(r.totalVagas, "Vagas no radar") +
-      card(r.ranqueadas, "Já avaliadas") +
+      card(r.avaliadas, "Já avaliadas", false, r.recomendadas+" recomendadas · "+r.descartadas+" descartadas") +
+      card(r.naFila, "Na fila (sem nota)", r.naFila>0, r.naFila>0 ? "clique em Avaliar e ranquear" : "tudo avaliado ✓") +
       card(r.candidaturas, "Candidaturas enviadas") +
       card(r.urgentes, "Prazo ≤ 7 dias", true);
     JOBS = s.vagas || [];
@@ -569,7 +585,7 @@ function applyProfile(p){
       : "Dois passos rápidos e o assistente já sabe quem é você.";
   }
 }
-function card(n,label,urg){ return `<div class="card${urg?' urg':''}"><b>${n}</b><span>${label}</span></div>`; }
+function card(n,label,urg,sub){ return `<div class="card${urg?' urg':''}"><b>${n}</b><span>${label}</span>${sub?`<small class="csub">${esc(sub)}</small>`:""}</div>`; }
 function jobRow(j,i){
   const prazo = j.deadline ? ` <span class="tag prazo">fecha ${j.deadline.slice(8,10)}/${j.deadline.slice(5,7)}</span>` : "";
   const ok = j.aplicada ? ` <span class="tag ok">✓ já inscrito</span>` : "";
@@ -815,6 +831,49 @@ function iniciarTimer(el){
   upd(); _timer=setInterval(upd,1000);
 }
 function pararTimer(){ clearInterval(_timer); _timer=null; }
+
+// ---- Avaliar e ranquear em LOTES (até zerar a fila) ----
+let rankCtrl=null;
+async function rankBatch(){
+  if(running) return;
+  running=true; document.querySelectorAll(".btn").forEach(b=>b.disabled=true);
+  const box=$("#rankbox"); box.classList.add("on");
+  $("#rMsg").textContent="Montando a fila…"; $("#rPct").textContent="0%"; $("#rFill").style.width="0%";
+  $("#rResult").hidden=true; $("#rLog").hidden=false; $("#rLog").innerHTML='<span class="step">Iniciando…</span>';
+  box.scrollIntoView({behavior:"smooth",block:"center"});
+  rankCtrl=new AbortController();
+  let fim=null, erro=null, cancelado=false;
+  try{
+    const r=await fetch("/api/rank-batch",{method:"POST",signal:rankCtrl.signal});
+    const reader=r.body.getReader(), dec=new TextDecoder(); let buf="";
+    for(;;){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf("\n"))>=0){
+        const l=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(!l) continue;
+        let o; try{ o=JSON.parse(l); }catch{ continue; }
+        if(o.lote){ $("#rMsg").textContent=o.lote.msg; $("#rPct").textContent=o.lote.pct+"%"; $("#rFill").style.width=o.lote.pct+"%"; }
+        if(o.log) $("#rLog").innerHTML='<span class="step">'+esc(o.log)+'</span>';
+        if(o.fim) fim=o.fim;
+        if(o.erro) erro=o;
+        if(o.cancelado) cancelado=true;
+      }
+    }
+  }catch(e){ if(e.name!=="AbortError") erro={erro:"falha na avaliação: "+e.message}; else cancelado=true; }
+  $("#rLog").hidden=true;
+  if(cancelado){ $("#rMsg").textContent="Avaliação cancelada."; $("#rPct").textContent="—"; }
+  else if(erro){ $("#rMsg").textContent="Não consegui concluir."; $("#rResult").hidden=false;
+    $("#rResult").innerHTML=erroHtml(erro,"Erro ao avaliar:"); }
+  else if(fim){ $("#rPct").textContent="100%"; $("#rFill").style.width="100%";
+    $("#rMsg").textContent=fim.msg||"Concluído."; $("#rResult").hidden=false;
+    $("#rResult").innerHTML='<p style="margin:0">✓ '+esc(fim.msg||"")+'</p>'; }
+  running=false; document.querySelectorAll(".btn").forEach(b=>b.disabled=false);
+  rankCtrl=null; loadState();
+  if(!erro && !cancelado) setTimeout(()=>box.classList.remove("on"), 6000);
+}
+$("#rankBtn").addEventListener("click", rankBatch);
+$("#rCancel").addEventListener("click",()=>{ if(rankCtrl) rankCtrl.abort(); });
 
 // ================= Seleção em massa de vagas =================
 function jobsSelecionadas(){ return JOBS.filter(j=>SELEC.has(j.url)).map(j=>({url:j.url,title:j.title,company:j.company})); }

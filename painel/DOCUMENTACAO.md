@@ -125,6 +125,28 @@ e reaproveitado como está. Ao **preparar candidatura**, o painel instrui o assi
 
 ## Changelog
 
+### 2026-07-15 — contadores honestos + avaliação em LOTES (fila não fica para trás)
+Investigação de "achei 208 vagas mas só 97 foram avaliadas". A conta real era:
+**97 recomendadas + 36 avaliadas-mas-vetadas + 75 nunca avaliadas = 208**. Dois bugs:
+- **Rótulo mentindo:** o card dizia "JÁ AVALIADAS" mas mostrava `recomendadas.length`
+  — as 36 vetadas (ex.: localização) sumiam da conta. Agora `buildState` devolve
+  `avaliadas` (com nota = 133), `recomendadas` (97), `descartadas` (36) e `naFila` (75).
+  O painel mostra **5 cards honestos**, incluindo **"Na fila (sem nota)"** — que é
+  acionável e destaca quando há trabalho pendente.
+- **Vagas ficavam para trás:** o botão mandava uma única execução `/rank` para TODAS as
+  vagas novas; ela parava no meio e as restantes nunca eram avaliadas. Novo endpoint
+  **`POST /api/rank-batch`** monta a fila (sem nota, não skipped/expired), divide em
+  **lotes de 20** e roda um por vez com `runClaudeStream` — barra de progresso
+  ("Lote 2/4"), etapa ao vivo e **cancelamento** (AbortController → o servidor mata o processo).
+  O prompt segue o contrato do `/rank` (status/rank_score/rank_verdict/rank_date/
+  rank_location/rank_notes).
+- **Anti-mentira:** o total final NÃO usa a contagem que o Claude alega — o servidor
+  **relê o `seen_jobs.json`** e reporta o que de fato foi gravado ("Avaliadas X de N.
+  Ainda faltam Y."). Verificado no teste: o Claude simulado alegou 80 avaliadas e o
+  sistema reportou corretamente 0.
+- Testado: 75 na fila → 4 lotes (20/20/20/15), progresso 0→25→50→75→100%, log ao vivo,
+  cards mostrando 208 / 133 (97 rec. · 36 desc.) / 75 na fila.
+
 ### 2026-07-14 — progresso ao vivo nas ações em massa (não parece mais travado)
 - **Problema:** "Adicionando ao currículo e reavaliando N vagas…" ficava minutos só com um
   spinner mudo — parecia travado. O `--print` normal do Claude não emite nada até terminar.

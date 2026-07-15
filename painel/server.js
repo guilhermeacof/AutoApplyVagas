@@ -211,7 +211,12 @@ function markApplied(jobs, tracker) {
 function buildState() {
   const tracker = readTracker();
   const all = markApplied(readAllJobs(), tracker);
-  const recomendadas = all.filter((j) => j.score != null && !j.vetada);
+  // Contadores honestos: "avaliadas" é quem TEM nota (inclusive as vetadas). Antes o
+  // painel rotulava "já avaliadas" mostrando só as recomendadas — as vetadas sumiam.
+  const avaliadas = all.filter((j) => j.score != null);
+  const recomendadas = avaliadas.filter((j) => !j.vetada);
+  const descartadas = avaliadas.filter((j) => j.vetada);
+  const naFila = all.filter((j) => j.score == null); // nunca avaliadas
   const hoje = new Date("2026-07-11T12:00:00"); // data do workspace
   const urgentes = recomendadas.filter((j) => {
     if (!j.deadline) return false;
@@ -223,7 +228,10 @@ function buildState() {
     cargo: readConfig().cargo || "",
     resumo: {
       totalVagas: all.length,
-      ranqueadas: recomendadas.length,
+      avaliadas: avaliadas.length,        // com nota (recomendadas + descartadas)
+      recomendadas: recomendadas.length,
+      descartadas: descartadas.length,    // avaliadas, mas vetadas (ex.: localização)
+      naFila: naFila.length,              // ainda sem nota
       candidaturas: tracker.length,
       urgentes: urgentes.length,
     },
@@ -813,6 +821,76 @@ const server = http.createServer((req, res) => {
         linha({ fim: j }); res.end();
       });
     });
+    return;
+  }
+
+  // Avalia (ranqueia) as vagas da FILA em LOTES, até zerar. Antes, uma única execução
+  // tentava todas de uma vez e parava no meio — deixando vagas sem nota para sempre.
+  if (u.pathname === "/api/rank-batch" && req.method === "POST") {
+    res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
+    const linha = (o) => { try { res.write(JSON.stringify(o) + "\n"); } catch {} };
+    let cancelado = false;
+    res.on("close", () => { cancelado = true; });
+
+    const file = path.join(WORKSPACE, "job_scraper", "seen_jobs.json");
+    // Fila = mesma regra do painel: sem nota, e que não foi descartada/expirada antes.
+    const pendentes = () => {
+      try {
+        const d = JSON.parse(fs.readFileSync(file, "utf8"));
+        return Object.entries(d.seen || {})
+          .filter(([, e]) => e.rank_score == null && e.status !== "skipped" && e.status !== "expired")
+          .map(([url, e]) => ({ url, title: e.title, company: e.company }));
+      } catch { return null; }
+    };
+    const fila = pendentes();
+    if (fila === null) { linha({ erro: "não consegui ler as vagas (job_scraper/seen_jobs.json)" }); return res.end(); }
+    if (!fila.length) { linha({ fim: { avaliadas: 0, restantes: 0, msg: "Nenhuma vaga na fila — todas já foram avaliadas." } }); return res.end(); }
+
+    const TAM = 20;
+    const lotes = [];
+    for (let i = 0; i < fila.length; i += TAM) lotes.push(fila.slice(i, i + TAM));
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    const proximo = (i) => {
+      if (cancelado) { linha({ cancelado: true }); return res.end(); }
+      if (i >= lotes.length) return finalizar();
+      const lote = lotes[i];
+      const pct = Math.round((i / lotes.length) * 100);
+      linha({ lote: { atual: i + 1, total: lotes.length, pct,
+        msg: "Lote " + (i + 1) + "/" + lotes.length + " — avaliando " + lote.length + " vaga(s)… (" + fila.length + " na fila)" } });
+      const lista = lote.map((j, k) => (k + 1) + ". " + (j.title || "") + " — " + (j.company || "") + " — " + j.url).join("\n");
+      const prompt =
+        'Avalie estas vagas contra o meu perfil, seguindo EXATAMENTE os critérios do /rank ' +
+        '(leia .claude/commands/rank.md e .claude/skills/job-application-assistant/04-job-evaluation.md, ' +
+        'além de CLAUDE.md e 01-candidate-profile.md): pesos Técnico 30%, Experiência 25%, ' +
+        'Comportamental 15%, Alinhamento de carreira 30%; bandas Strong Fit 75+, Good Fit 60-74, ' +
+        'Moderate Fit 45-59, Weak Fit 30-44, Poor Fit <30; veto de localização.\n\nVagas:\n' + lista + '\n\n' +
+        'Para CADA vaga acima, atualize a entrada dela (pela URL) em job_scraper/seen_jobs.json com: ' +
+        '"status": "ranked", "rank_score": <0-100>, "rank_verdict": "<banda>", "rank_date": "' + hoje + '", ' +
+        '"rank_location": "PASS"|"FAIL"|"FLAG", "rank_notes": "<o que falta, curto>". ' +
+        'Vaga morta ou com prazo vencido: "status": "expired". NÃO altere o job_search_tracker.csv. ' +
+        'Não invente nada; seja honesto na nota.\n' +
+        'Responda ESTRITAMENTE com UM bloco JSON, sem texto fora dele: {"avaliadas": <n>, "resumo": "<uma frase>"}';
+      runClaudeStream(prompt, (t) => linha({ log: t }), (out, err) => {
+        if (cancelado) { linha({ cancelado: true }); return res.end(); }
+        if (err) {
+          linha({ erro: "falha no lote " + (i + 1) + "/" + lotes.length, detalhe: String(err).slice(-1500) });
+          return finalizar();
+        }
+        proximo(i + 1);
+      });
+    };
+    // A verdade vem do arquivo, não da contagem que o Claude diz ter feito.
+    const finalizar = () => {
+      const resta = pendentes();
+      const restantes = resta === null ? null : resta.length;
+      const avaliadas = restantes == null ? null : fila.length - restantes;
+      linha({ fim: { avaliadas, restantes,
+        msg: restantes === 0 ? "Fila zerada: todas as " + fila.length + " vagas foram avaliadas."
+          : "Avaliadas " + avaliadas + " de " + fila.length + ". Ainda faltam " + restantes + "." } });
+      res.end();
+    };
+    proximo(0);
     return;
   }
 
