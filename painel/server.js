@@ -322,6 +322,17 @@ function extractJson(text) {
   try { return JSON.parse(cand); } catch { return null; }
 }
 
+// Resposta de erro com o DETALHE técnico junto: sem isso o painel só mostrava
+// "não consegui...", escondendo a causa real (o que o Claude respondeu de fato,
+// um limite de uso, a pasta não autorizada, um timeout, etc.).
+function erroDetalhado(msg, out, err) {
+  const bruto = [err ? String(err) : "", out ? String(out) : ""]
+    .filter(Boolean).join("\n").trim();
+  // Guarda o FIM da saída: é onde costuma estar a mensagem de erro / a resposta.
+  const detalhe = bruto ? bruto.slice(-1500) : null;
+  return JSON.stringify({ erro: msg, detalhe });
+}
+
 // ---------- Meu currículo ÚNICO (ver / baixar / editar / recompilar) ----------
 // O usuário mantém UM currículo só (o mestre cv/main_example.tex), que vai sendo
 // enriquecido conforme confirma o que tem. Nada é gerado por vaga: candidatar-se usa
@@ -567,9 +578,9 @@ const server = http.createServer((req, res) => {
       '"lacuna_real" = algo que eu genuinamente não tenho e NÃO devo inventar. Não invente nada. Todos os textos em português.';
     runClaudeCollect(prompt, (out, err) => {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      if (err) return res.end(JSON.stringify({ erro: err }));
+      if (err) return res.end(erroDetalhado("falha ao executar o assistente", out, err));
       const j = extractJson(out);
-      if (!j) return res.end(JSON.stringify({ erro: "não consegui interpretar a análise" }));
+      if (!j) return res.end(erroDetalhado("não consegui interpretar a análise", out, err));
       res.end(JSON.stringify(j));
     });
     return;
@@ -593,9 +604,9 @@ const server = http.createServer((req, res) => {
         'Depois reavalie a minha adequação à vaga "' + (body.title || "") + '" (' + (body.url || "") + ') e atualize a nota (rank_score) no job_scraper/seen_jobs.json. ' +
         'Responda ESTRITAMENTE com um único bloco JSON: {"notaAntes": <n>, "notaDepois": <n>, "resumo": "<uma frase do que mudou>"}. Sem texto fora do JSON.';
       runClaudeCollect(prompt, (out, err) => {
-        if (err) return res.end(JSON.stringify({ erro: err }));
+        if (err) return res.end(erroDetalhado("falha ao executar o assistente", out, err));
         const j = extractJson(out);
-        if (!j) return res.end(JSON.stringify({ erro: "não consegui confirmar o resultado" }));
+        if (!j) return res.end(erroDetalhado("não consegui confirmar o resultado", out, err));
         res.end(JSON.stringify(j));
       });
     });
@@ -731,9 +742,9 @@ const server = http.createServer((req, res) => {
         '{"adicionaveis":[{"item":"<curto>","sugestao":"<o que escrever no CV>","vagas":[<números 1..N que isso ajuda>]}],' +
         '"lacunas":[{"item":"<curto>","explicacao":"<por que não dá para adicionar>"}]}\nTextos em português.';
       runClaudeCollect(prompt, (out, err) => {
-        if (err) return res.end(JSON.stringify({ erro: err }));
+        if (err) return res.end(erroDetalhado("falha ao executar o assistente", out, err));
         const j = extractJson(out);
-        if (!j) return res.end(JSON.stringify({ erro: "não consegui interpretar a análise" }));
+        if (!j) return res.end(erroDetalhado("não consegui interpretar a análise", out, err));
         res.end(JSON.stringify(j));
       });
     });
@@ -763,9 +774,9 @@ const server = http.createServer((req, res) => {
         'Responda ESTRITAMENTE com UM bloco JSON, sem texto fora dele: ' +
         '{"resultados":[{"url":"<url>","notaAntes":<n>,"notaDepois":<n>}],"resumo":"<uma frase do que mudou>"}.';
       runClaudeCollect(prompt, (out, err) => {
-        if (err) return res.end(JSON.stringify({ erro: err }));
+        if (err) return res.end(erroDetalhado("falha ao executar o assistente", out, err));
         const j = extractJson(out);
-        if (!j) return res.end(JSON.stringify({ erro: "não consegui confirmar o resultado" }));
+        if (!j) return res.end(erroDetalhado("não consegui confirmar o resultado", out, err));
         res.end(JSON.stringify(j));
       });
     });

@@ -125,6 +125,19 @@ e reaproveitado como está. Ao **preparar candidatura**, o painel instrui o assi
 
 ## Changelog
 
+### 2026-07-14 — erro passa a mostrar a causa real (detalhe técnico)
+- **Problema:** quando a análise/reavaliação falhava, o painel só dizia
+  *"não consegui confirmar o resultado"* — escondendo a causa (o que o assistente
+  realmente respondeu: limite de uso, recusa, texto fora do formato, timeout…).
+- **Correção:** novo helper `erroDetalhado(msg, out, err)` no servidor devolve
+  `{erro, detalhe}` — o `detalhe` traz o **fim da saída real** do assistente (1500 chars),
+  que é onde costuma estar a mensagem de erro. Aplicado nos 4 endpoints que usam o
+  Claude: `/api/analyze`, `/api/adjust`, `/api/bulk-analyze`, `/api/bulk-adjust`.
+- **No painel:** helper `erroHtml()` mostra o erro amigável e, abaixo, um
+  **"Ver o que aconteceu (detalhe técnico)"** (bloco `<details>` expansível com a saída).
+- Testado ponta a ponta: com o assistente devolvendo algo fora do formato, a API retorna
+  `erro` + `detalhe`, e o painel renderiza a mensagem + o detalhe expansível.
+
 ### 2026-07-14 — busca usa todos os portais + filtro Brasil/Mundo
 - **Todos os portais no botão "Buscar novas vagas":** o `buildSearchTasks` passou a
   incluir os 14 novos buscadores além dos 4 originais — portais BR por palavra-chave

@@ -129,6 +129,14 @@ input[type=file]{font:inherit;font-size:13px;max-width:220px}
 .cvstate{font-size:13.5px;font-weight:600;color:var(--accent)}
 .cvlog{margin-top:12px;padding:12px;background:#2a1512;border:1px solid var(--urgent);border-radius:10px;
   color:#f0b8a8;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto}
+/* Detalhe técnico do erro (o que realmente aconteceu) */
+.errdet{margin-top:8px}
+.errdet summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ink-2);list-style:revert}
+.errdet summary:hover{color:var(--accent)}
+.errdet pre{margin:8px 0 0;padding:10px;background:#2a1512;border:1px solid var(--urgent);border-radius:9px;
+  color:#f0b8a8;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;
+  max-height:220px;overflow:auto}
+.errhint{font-size:12.5px;color:var(--ink-2);margin:6px 0 0}
 .bulkvagas{display:inline-block;margin-left:6px;font-size:11.5px;font-weight:700;color:var(--accent);
   background:var(--accent-soft);border-radius:99px;padding:1px 8px;vertical-align:middle}
 .bulklacuna{display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;color:var(--ink-2)}
@@ -730,7 +738,7 @@ $("#mAnalyze").addEventListener("click", async ()=>{
     const r = await fetch("/api/analyze?url="+encodeURIComponent(j.url)+"&title="+encodeURIComponent(j.title||"")+"&company="+encodeURIComponent(j.company||""));
     const a = await r.json();
     clearBusy();
-    if(a.erro){ $("#mGaps").innerHTML='<p style="color:var(--urgent);margin:0">Não consegui analisar agora: '+esc(a.erro)+'</p>'; return; }
+    if(a.erro){ $("#mGaps").innerHTML=erroHtml(a,"Não consegui analisar agora:"); return; }
     if(a.nota!=null) $("#mScore").textContent=a.nota;
     if(a.resumo) $("#mVerdSub").textContent=a.resumo;
     const faltas=a.faltas||[];
@@ -763,7 +771,7 @@ $("#mAddReval").addEventListener("click", async ()=>{
       body:JSON.stringify({url:j.url,title:j.title,company:j.company,items:checked})});
     const a = await r.json();
     clearBusy();
-    if(a.erro){ $("#mResult").hidden=false; $("#mResult").innerHTML='<p style="color:var(--urgent);margin:0">Não consegui concluir: '+esc(a.erro)+'</p>'; return; }
+    if(a.erro){ $("#mResult").hidden=false; $("#mResult").innerHTML=erroHtml(a,"Não consegui concluir:"); return; }
     const antes = a.notaAntes!=null?a.notaAntes:(j.score!=null?j.score:"—");
     const depois = a.notaDepois!=null?a.notaDepois:antes;
     $("#mScore").textContent=depois;
@@ -808,7 +816,7 @@ $("#bulkAnalyze").addEventListener("click", async ()=>{
   try{
     const r=await fetch("/api/bulk-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobs})});
     const a=await r.json(); $("#bulkBusy").hidden=true;
-    if(a.erro){ $("#bulkBody").hidden=false; $("#bulkGaps").innerHTML='<p style="color:var(--urgent)">Não consegui analisar: '+esc(a.erro)+'</p>'; return; }
+    if(a.erro){ $("#bulkBody").hidden=false; $("#bulkGaps").innerHTML=erroHtml(a,"Não consegui analisar:"); return; }
     const add=a.adicionaveis||[], lac=a.lacunas||[];
     $("#bulkGaps").innerHTML = add.length
       ? add.map(x=>{
@@ -835,7 +843,7 @@ $("#bulkAddReval").addEventListener("click", async ()=>{
   try{
     const r=await fetch("/api/bulk-adjust",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items,jobs})});
     const a=await r.json(); $("#bulkBusy").hidden=true; $("#bulkResult").hidden=false;
-    if(a.erro){ $("#bulkResult").innerHTML='<p style="color:var(--urgent)">Não consegui concluir: '+esc(a.erro)+'</p>'; return; }
+    if(a.erro){ $("#bulkResult").innerHTML=erroHtml(a,"Não consegui concluir:"); return; }
     const res=a.resultados||[];
     const linhas=res.map(x=>{
       const j=JOBS.find(j=>j.url===x.url);
@@ -888,6 +896,19 @@ $("#cvSave").addEventListener("click", async ()=>{
 });
 
 function esc(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+// Mostra o erro amigável E o detalhe técnico do que aconteceu (resposta do
+// assistente, limite de uso, timeout...). Sem isso só aparecia "não consegui...".
+function erroHtml(a, prefixo){
+  let h='<p style="color:var(--urgent);margin:0">'+prefixo+' '+esc(a.erro||"erro desconhecido")+'</p>';
+  if(a.detalhe){
+    h+='<details class="errdet"><summary>Ver o que aconteceu (detalhe técnico)</summary><pre>'
+      +esc(a.detalhe)+'</pre></details>';
+  }else{
+    h+='<p class="errhint">Sem detalhe técnico devolvido — veja a janela preta do painel para mais pistas.</p>';
+  }
+  return h;
+}
 
 let runEv=null;
 function run(prompt){
